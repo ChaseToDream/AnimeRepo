@@ -1,8 +1,11 @@
 // IPC 处理器：注册所有渲染进程可调用的通道
 import { ipcMain, dialog, app, shell } from 'electron'
 import fs from 'fs'
+import path from 'path'
 import * as store from './store'
 import { scanLibrary, rebuildDatabase } from './scanner'
+
+const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
 
 export function registerIpc() {
   // —— 番剧库 ——
@@ -73,6 +76,17 @@ export function registerIpc() {
     if (p && fs.existsSync(p)) shell.openPath(p)
   })
   ipcMain.handle('app:version', () => app.getVersion())
+
+  // —— 字幕 ——
+  ipcMain.handle('subtitle:read', (_e, filePath) => {
+    try {
+      if (!filePath || !fs.existsSync(filePath)) return null
+      if (!SUBTITLE_EXTS.includes(path.extname(filePath).toLowerCase())) return null
+      return fs.readFileSync(filePath, 'utf-8')
+    } catch (e) {
+      return null
+    }
+  })
 
   // —— 窗口控制 ——
   ipcMain.on('win:minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())

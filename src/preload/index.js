@@ -33,6 +33,8 @@ const api = {
   // —— 系统 ——
   openFolder: (p) => ipcRenderer.invoke('shell:open-folder', p),
   getVersion: () => ipcRenderer.invoke('app:version'),
+  // —— 字幕 ——
+  readSubtitle: (filePath) => ipcRenderer.invoke('subtitle:read', filePath),
   // —— 窗口控制 ——
   minimize: () => ipcRenderer.send('win:minimize'),
   maximize: () => ipcRenderer.send('win:maximize'),

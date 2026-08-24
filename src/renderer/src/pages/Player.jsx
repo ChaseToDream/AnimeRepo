@@ -3,12 +3,61 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import WindowControls from '../components/WindowControls'
 import { formatTime, coverGradient } from '../lib/format'
+import api from '../lib/api'
 import './Player.css'
 
 const SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 const QUALITIES = ['480P', '720P', '1080P']
 const SETTING_TABS = ['视频', '音频', '字幕', '播放']
 const PROGRESS_SAVE_INTERVAL = 5000
+
+// 字幕大小 → cue 字号（兼容设置页英文值与历史中文值）
+const SUB_SIZE_MAP = {
+  small: '0.9em', medium: '1.15em', large: '1.4em', xlarge: '1.7em',
+  小: '0.9em', 中: '1.15em', 大: '1.4em', 特大: '1.7em'
+}
+
+// h:mm:ss.cc → HH:MM:SS.mmm（VTT 时间格式）
+function normVttTime(t) {
+  const parts = String(t).split(':')
+  const h = parts.length === 3 ? parts[0].padStart(2, '0') : '00'
+  const m = (parts.length === 3 ? parts[1] : parts[0]).padStart(2, '0')
+  const rest = parts.length === 3 ? parts[2] : parts[1]
+  const [s, ms] = String(rest).split('.')
+  const ss = (s || '0').padStart(2, '0')
+  // ASS 使用厘秒（.50 = 500ms），故毫秒部分向后补零
+  const mmm = (ms || '0').padEnd(3, '0').slice(0, 3)
+  return `${h}:${m}:${ss}.${mmm}`
+}
+
+// 简易 ASS/SSA → VTT：提取 Dialogue 对话文本，忽略样式/定位/特效
+function assToVtt(text) {
+  const lines = text.split(/\r?\n/)
+  const out = ['WEBVTT']
+  let inEvents = false
+  for (const line of lines) {
+    if (/^\[Events\]/i.test(line)) { inEvents = true; continue }
+    if (inEvents && /^\[/.test(line)) inEvents = false
+    if (!inEvents) continue
+    const m = line.match(/^Dialogue:\s*[^,]*,\s*([\d:.]+),\s*([\d:.]+),\s*[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,(.*)$/)
+    if (!m) continue
+    const body = m[3].replace(/\{[^}]*\}/g, '').replace(/\\N/g, '\n').trim()
+    if (!body) continue
+    out.push('', `${normVttTime(m[1])} --> ${normVttTime(m[2])}`, body)
+  }
+  return out.join('\n')
+}
+
+// SRT / ASS / VTT → WebVTT 文本（供 <track> 使用）
+function toVtt(text) {
+  if (!text) return ''
+  const clean = String(text).replace(/^\uFEFF/, '')
+  if (/^WEBVTT/.test(clean)) return clean
+  if (/^Dialogue:|^\[Events\]/m.test(clean)) return assToVtt(clean)
+  return 'WEBVTT\n\n' + clean
+    .replace(/\r\n/g, '\n')
+    .replace(/(\d{1,2}):(\d{2}):(\d{2}),(\d{1,3})/g, '$1:$2:$3.$4')
+}
 
 // 本地视频调节：共享一个 CSS filter 应用于 <video>
 function VideoFilter({ brightness, contrast, saturation, hue }) {
@@ -67,9 +116,13 @@ export default function Player() {
   const [hardwareAccel, setHardwareAccel] = useState(settings?.hardwareDecode ?? true)
   const [autoNext, setAutoNext] = useState(settings?.autoNextEpisode ?? true)
   const [skipOpEd, setSkipOpEd] = useState(settings?.skipOpEd ?? true)
-  const [subSize, setSubSize] = useState(settings?.subtitleFontSize ?? '中')
+  const [subSize, setSubSize] = useState(settings?.subtitleFontSize || 'medium')
   const [audioGain, setAudioGain] = useState(100)
   const [audioDelay, setAudioDelay] = useState(0)
+
+  // —— 字幕 ——
+  const [subtitleText, setSubtitleText] = useState('')
+  const [vttUrl, setVttUrl] = useState('')
 
   // 同番剧剧集（按 number 排序）
   const episodes = (anime?.episodes || [])
@@ -215,6 +268,110 @@ export default function Player() {
     if (settings) updateSettings(patch)
   }
 
+  // —— 字幕 ——
+  // 加载当前剧集字幕文件内容
+  useEffect(() => {
+    let cancelled = false
+    setSubtitleText('')
+    if (ep?.subtitlePath) {
+      api.readSubtitle(ep.subtitlePath)
+        .then((text) => { if (!cancelled && text) setSubtitleText(text) })
+        .catch(() => {})
+    }
+    return () => { cancelled = true }
+  }, [epId, ep?.subtitlePath])
+
+  // 字幕文本 → WebVTT Blob URL（供 <track> 使用）
+  useEffect(() => {
+    setVttUrl('')
+    if (!subtitleText) return
+    const vtt = toVtt(subtitleText)
+    if (!/-->/.test(vtt)) return
+    const blob = new Blob([vtt], { type: 'text/vtt;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    setVttUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [subtitleText])
+
+  // 字幕显示样式（字号 / 描边），通过动态 <style> 注入 ::cue
+  useEffect(() => {
+    const style = document.createElement('style')
+    const stroke = settings?.subtitleStroke !== false
+    style.textContent = `
+      .player-video::cue {
+        font-size: ${SUB_SIZE_MAP[subSize] || '1.15em'};
+        background: rgba(0, 0, 0, 0.6);
+        text-shadow: ${stroke ? '1px 1px 2px #000, 0 0 1px #000' : 'none'};
+      }
+    `
+    document.head.appendChild(style)
+    return () => { document.head.removeChild(style) }
+  }, [subSize, settings?.subtitleStroke])
+
+  // —— 自动下一集 ——
+  // 播放结束：标记当前集已看，按设置自动播放下一集
+  const handleEnded = useCallback(() => {
+    if (epId) setWatched(animeId, epId, true)
+    if (autoNext && nextEp) goEp(nextEp.id)
+  }, [animeId, epId, autoNext, nextEp, goEp, setWatched])
+
+  // —— 键盘快捷键 ——
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = (e.target && e.target.tagName) || ''
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      const v = videoRef.current
+      if (!v) return
+      switch (e.code) {
+        case 'Space':
+        case 'KeyK':
+          e.preventDefault()
+          togglePlay()
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          seekTo(v.currentTime - 5)
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          seekTo(v.currentTime + 5)
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          setVolume((prev) => {
+            const next = Math.min(100, prev + 5)
+            if (videoRef.current) videoRef.current.volume = next / 100
+            return next
+          })
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          setVolume((prev) => {
+            const next = Math.max(0, prev - 5)
+            if (videoRef.current) videoRef.current.volume = next / 100
+            return next
+          })
+          break
+        case 'KeyM':
+          e.preventDefault()
+          v.muted = !v.muted
+          break
+        case 'KeyF':
+          e.preventDefault()
+          fullscreen()
+          break
+        case 'KeyP':
+          e.preventDefault()
+          pip()
+          break
+        default:
+          break
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [togglePlay, seekTo, fullscreen, pip])
+
   if (!anime || !ep) {
     return (
       <div className="player-page">
@@ -271,7 +428,10 @@ export default function Player() {
             onTimeUpdate={handleTimeUpdate}
             onPlay={() => { setPlaying(true); setSpeedMenuOpen(false) }}
             onPause={() => setPlaying(false)}
-          />
+            onEnded={handleEnded}
+          >
+            {vttUrl ? <track kind="subtitles" label="字幕" srcLang="zh" src={vttUrl} default /> : null}
+          </video>
 
           {/* 左上角集数 */}
           <div className="player-video-corner player-video-corner--tl">
@@ -481,10 +641,10 @@ export default function Player() {
                       <div className="setting-row">
                         <span className="setting-row__label">字幕大小</span>
                         <select className="setting-select" value={subSize} onChange={(e) => { setSubSize(e.target.value); persist({ subtitleFontSize: e.target.value }) }} aria-label="字幕大小">
-                          <option value="小">小</option>
-                          <option value="中">中</option>
-                          <option value="大">大</option>
-                          <option value="特大">特大</option>
+                          <option value="small">小</option>
+                          <option value="medium">中</option>
+                          <option value="large">大</option>
+                          <option value="xlarge">特大</option>
                         </select>
                       </div>
                       <div className="setting-row">
