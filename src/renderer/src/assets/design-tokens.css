@@ -24,8 +24,8 @@
   --spacer-40: 40px;
 
   /* font */
-  --font-family-default: "SF Pro Text", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
-  --font-family-heading: "SF Pro", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  --font-family-default: "Inter", "SF Pro Text", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  --font-family-heading: "Inter", "SF Pro", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
   --font-family-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
   --font-weight-default: 400;
   --font-weight-code: 450;

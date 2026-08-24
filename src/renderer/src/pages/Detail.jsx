@@ -6,7 +6,9 @@ import {
   formatTime,
   progressPct,
   nextEpisode,
-  shortDate
+  shortDate,
+  STATUS_LABEL,
+  STATUS_TAG_CLASS
 } from '../lib/format'
 import Poster from '../components/Poster'
 import './Detail.css'
@@ -181,9 +183,9 @@ export default function Detail() {
                   <span key={g} className="ds-tag ds-tag--brand">{g}</span>
                 ))}
                 {anime.year ? <span className="ds-tag">{anime.year}</span> : null}
-                <span className="ds-tag ds-tag--success">
+                <span className={'ds-tag ' + (STATUS_TAG_CLASS[anime.status] || '')}>
                   <span className="hero__status-dot" />
-                  {anime.status === 'completed' ? '完结' : '连载中'}
+                  {STATUS_LABEL[anime.status] || (anime.status === 'completed' ? '完结' : '连载中')}
                 </span>
               </div>
 

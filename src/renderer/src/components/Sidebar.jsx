@@ -6,7 +6,7 @@ import api from '../lib/api'
 
 // 侧边导航：用于番剧库/统计/设置等带完整外壳的页面
 export default function Sidebar({ activeFilter, onFilterChange }) {
-  const { library, settings, addFolder, refresh, t } = useApp()
+  const { library, settings, addFolder, refresh, t, showToast, scan } = useApp()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [section, setSection] = useState('library')
@@ -19,7 +19,11 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
   const navigateTo = (route) => navigate(route)
 
   const handleMediaOpen = async () => {
-    await addFolder()
+    const folders = await addFolder()
+    if (folders && folders.length) {
+      showToast('已添加媒体库文件夹，开始扫描…', 'success')
+      scan()
+    }
     refresh()
   }
 
