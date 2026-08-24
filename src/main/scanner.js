@@ -145,13 +145,36 @@ async function scanLibrary(store, folders, settings) {
     result.scanned += g.episodes.length
   }
 
-  return { ...result, animes: store.list() }
+  // B2 修复：清理失效条目（数据一致性）——磁盘上已删除的剧集/番剧同步从库中移除
+  // 仅当存在有效媒体库文件夹时才执行，避免空库扫描误清空数据
+  let removed = 0
+  if (folders && folders.length) {
+    const existingFiles = new Set(files)
+    const snapshot = store.list().slice()
+    for (const a of snapshot) {
+      const alive = (a.episodes || []).filter((e) => e.filePath && existingFiles.has(e.filePath))
+      if (alive.length === 0) {
+        store.remove(a.id)
+        removed++
+      } else if (alive.length !== a.episodes.length) {
+        store.updateAnime(a.id, { episodes: alive, aired: alive.length })
+      }
+    }
+  }
+
+  return { ...result, removed, animes: store.list() }
 }
 
-// 重建数据库：清空再扫描
+// 重建数据库：先备份，清空再扫描，失败自动回滚（B2 修复，避免中途失败导致数据全丢）
 async function rebuildDatabase(store, folders, settings) {
-  for (const id of store.list().map((a) => a.id)) store.remove(id)
-  return scanLibrary(store, folders, settings)
+  const backup = JSON.parse(JSON.stringify(store.list()))
+  try {
+    for (const id of store.list().map((a) => a.id)) store.remove(id)
+    return await scanLibrary(store, folders, settings)
+  } catch (e) {
+    for (const a of backup) store.upsert(a)
+    throw e
+  }
 }
 
 export { scanLibrary, rebuildDatabase, VIDEO_EXT }

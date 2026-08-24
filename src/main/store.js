@@ -114,27 +114,43 @@ function findByTitleKey(titleKey) {
 }
 
 // —— 剧集进度 ——
+
+// 统一计算番剧观看状态（B4 修复：取消全部已看后正确降级）
+// 规则：全部已看 → completed；部分已看或有播放进度 → watching；否则 → plan
+function recalcStatus(anime) {
+  const all = anime.episodes || []
+  if (!all.length) return
+  const watchedCount = all.filter((e) => e.watched).length
+  const inProgress = all.some((e) => !e.watched && e.progress > 0)
+  if (watchedCount === all.length) {
+    anime.status = 'completed'
+  } else if (watchedCount > 0 || inProgress) {
+    anime.status = 'watching'
+  } else {
+    anime.status = 'plan'
+  }
+}
+
 function setEpisodeProgress(animeId, epId, seconds, duration) {
   const anime = get(animeId)
   if (!anime) return null
   const ep = anime.episodes.find((e) => e.id === epId)
   if (!ep) return null
   ep.progress = Math.round(seconds)
-  if (typeof duration === 'number' && duration > 0) ep.duration = Math.round(duration)
-  if (seconds > 30) ep.watched = false
+  if (typeof duration === 'number' && duration > 0) {
+    ep.duration = Math.round(duration)
+    // B1 修复：播放至结尾（剩余不足 10 秒）自动标记为已看
+    // B3 修复：中途更新进度不再覆盖用户显式标记的已看状态
+    if (ep.duration - ep.progress <= 10) {
+      ep.watched = true
+      ep.progress = ep.duration
+    }
+  }
   const lastModifiedAt = new Date().toISOString()
   anime.lastWatchedEpisode = epId
   anime.lastWatchedAt = lastModifiedAt
   anime.updatedAt = lastModifiedAt
-  // 更新观看状态
-  const all = anime.episodes
-  const watchedCount = all.filter((e) => e.watched).length
-  if (watchedCount === all.length && all.length > 0) {
-    anime.status = 'completed'
-  } else if (watchedCount > 0) {
-    anime.status = anime.status === 'plan' ? 'watching' : anime.status
-    if (!anime.status) anime.status = 'watching'
-  }
+  recalcStatus(anime)
   save()
   return anime
 }
@@ -147,16 +163,12 @@ function setEpisodeWatched(animeId, epId, watched) {
   ep.watched = watched
   if (watched) {
     ep.progress = ep.duration || 0
+  } else if (ep.duration > 0 && ep.progress >= ep.duration) {
+    // 从「已看」取消：清零进度，回到未看状态（供 recalcStatus 正确判定）
+    ep.progress = 0
   }
   anime.updatedAt = new Date().toISOString()
-  const all = anime.episodes
-  const watchedCount = all.filter((e) => e.watched).length
-  if (watchedCount === all.length && all.length > 0) anime.status = 'completed'
-  else if (watchedCount > 0) {
-    if (!anime.status || anime.status === 'plan') anime.status = 'watching'
-  } else {
-    anime.status = anime.status !== 'completed' ? anime.status : anime.status
-  }
+  recalcStatus(anime)
   save()
   return anime
 }
