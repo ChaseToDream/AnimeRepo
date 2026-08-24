@@ -1,17 +1,29 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, protocol, net } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { ensureDataFile } from './store'
+import { registerIpc } from './ipc'
 
-// 创建主窗口
+// 自定义协议：anime://local/<base64path> 用于安全加载本地视频
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'anime', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+])
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 840,
+    minWidth: 980,
+    minHeight: 640,
+    title: 'AnimeRepo · 溯番',
     show: false,
     autoHideMenuBar: true,
+    frame: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      contextIsolation: true
     }
   })
 
@@ -25,7 +37,20 @@ function createWindow() {
     return { action: 'deny' }
   })
 
-  // 开发模式下加载 Vite Dev Server，生产模式加载打包后的 HTML
+  // 自定义协议处理：anime://local/<base64path>
+  protocol.handle('anime', (request) => {
+    const url = new URL(request.url)
+    if (url.hostname === 'local') {
+      try {
+        const filePath = Buffer.from(url.pathname.slice(1), 'base64url').toString('utf-8')
+        return net.fetch(pathToFileURL(filePath).toString())
+      } catch (e) {
+        return new Response('bad request', { status: 400 })
+      }
+    }
+    return new Response('not found', { status: 404 })
+  })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -35,21 +60,20 @@ function createWindow() {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.animerepo')
+  ensureDataFile()
+  registerIpc()
 
-  // 支持在开发模式下使用 F12 打开/关闭开发者工具
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
   createWindow()
 
-  // macOS 上点击 Dock 图标重新创建窗口
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
-// 除了 macOS 外，关闭所有窗口时退出应用
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()

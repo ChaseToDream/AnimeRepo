@@ -1,0 +1,179 @@
+/* ═══════════════════════════════════════════════════════════════
+   AnimeRepo — 番剧库首页样式
+   仅包含页面级新样式，组件类沿用 ds-components
+   ═══════════════════════════════════════════════════════════════ */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.library__scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ===== 统计卡行 ===== */
+.library__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacer-12);
+  padding: var(--spacer-16) var(--spacer-24) 0;
+}
+.library__stats .ds-statcard {
+  min-width: 0;
+}
+.library__stats .ds-statcard__label .icon {
+  color: var(--accent-color);
+}
+
+/* ===== 海报卡片补充 ===== */
+.anime-card__genres {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== 列表视图 ===== */
+.anime-list-wrap {
+  padding: var(--spacer-16) var(--spacer-24);
+}
+.anime-list {
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-6);
+  overflow: hidden;
+}
+.anime-list__header,
+.anime-list__row {
+  display: grid;
+  grid-template-columns: 40px 44px minmax(160px, 1fr) 120px 80px 120px 64px;
+  gap: var(--spacer-8);
+  align-items: center;
+  padding: 0 var(--spacer-16);
+}
+.anime-list__header {
+  height: 34px;
+  background: var(--bg-overlay-l1);
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
+  line-height: 1;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+.anime-list__row {
+  height: 64px;
+  border-bottom: 1px solid var(--border-neutral-l1);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.anime-list__row:last-child { border-bottom: none; }
+.anime-list__row:hover { background: var(--bg-overlay-l1); }
+
+.anime-list__index {
+  color: var(--text-tertiary);
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--body-xs-font-size);
+}
+.anime-list__thumb {
+  width: 36px;
+  height: 50px;
+  border-radius: var(--radius-4);
+  overflow: hidden;
+  background: var(--bg-overlay-l2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 9px;
+  line-height: 1.2;
+  text-align: center;
+  flex-shrink: 0;
+}
+.anime-list__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.anime-list__thumb span {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  box-sizing: border-box;
+}
+.anime-list__title {
+  font-size: var(--body-sm-font-size);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.anime-list__genres {
+  display: flex;
+  gap: var(--spacer-4);
+  flex-wrap: wrap;
+  overflow: hidden;
+}
+.anime-list__genres .ds-tag { max-width: 100%; }
+.anime-list__bar {
+  height: 4px;
+  background: var(--bg-overlay-l3);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.anime-list__bar-fill {
+  height: 100%;
+  background: var(--accent-color);
+  border-radius: var(--radius-full);
+}
+.anime-list__rating {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  color: var(--accent-amber);
+  font-size: var(--body-sm-font-size);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 列表视图在窄屏时收纳部分列 */
+@media (max-width: 900px) {
+  .library__stats { grid-template-columns: repeat(2, 1fr); }
+  .anime-list__header,
+  .anime-list__row { grid-template-columns: 40px 44px 1fr 80px 120px 64px; }
+  .anime-list__header > span:nth-child(4),
+  .anime-list__row > *:nth-child(4) { display: none; }
+}
+
+/* ===== 空状态 ===== */
+.library-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-12);
+  padding: var(--spacer-40);
+  text-align: center;
+}
+.library-empty__icon { color: var(--icon-tertiary); }
+.library-empty__title {
+  font-size: var(--heading-sm-font-size);
+  line-height: var(--heading-sm-line-height);
+  font-weight: var(--font-weight-strong);
+  color: var(--text-default);
+}
+.library-empty__desc {
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  color: var(--text-tertiary);
+  max-width: 320px;
+}
+.library-empty .ds-btn { margin-top: var(--spacer-8); }

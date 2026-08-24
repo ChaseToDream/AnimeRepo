@@ -1,52 +1,52 @@
-:root {
-  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
-  color: #333;
-  background-color: #f5f6fa;
-}
+@import './design-tokens.css';
+@import './ds-components.css';
 
 * {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  box-sizing: border-box;
 }
 
+html,
 body {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--bg-base-default);
+  color: var(--text-default);
+  font-family: var(--font-family-default);
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  font-weight: var(--font-weight-default);
+  height: 100%;
+  overflow: hidden;
 }
 
-.app {
-  text-align: center;
-  padding: 40px;
+#root {
+  height: 100vh;
+  width: 100vw;
 }
 
-.app h1 {
-  font-size: 42px;
-  color: #2c3e50;
-  margin-bottom: 12px;
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+  display: block;
 }
 
-.app p {
-  color: #666;
-  margin-bottom: 24px;
-  line-height: 1.8;
+a {
+  color: var(--text-default);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--text-default-hover);
 }
 
-.cards {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 20px;
+button {
+  font-family: inherit;
 }
 
-.card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  max-width: 240px;
-  font-weight: 500;
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
 }

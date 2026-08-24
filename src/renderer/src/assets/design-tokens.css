@@ -1,0 +1,158 @@
+/* ═══════════════════════════════════════════════════════════════
+   AnimeRepo (溯番) — Design Tokens (dark theme)
+   依据 docs/AnimeRepoUI 深色设计系统抽取
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* radius */
+  --radius-2: 2px;
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-full: 9999px;
+
+  /* spacers */
+  --spacer-0: 0px;
+  --spacer-4: 4px;
+  --spacer-6: 6px;
+  --spacer-8: 8px;
+  --spacer-12: 12px;
+  --spacer-16: 16px;
+  --spacer-24: 24px;
+  --spacer-32: 32px;
+  --spacer-40: 40px;
+
+  /* font */
+  --font-family-default: "SF Pro Text", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  --font-family-heading: "SF Pro", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  --font-family-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+  --font-weight-default: 400;
+  --font-weight-code: 450;
+  --font-weight-medium: 500;
+  --font-weight-strong: 600;
+
+  /* body */
+  --body-xs-font-size: 10px;
+  --body-xs-line-height: 14px;
+  --body-sm-font-size: 11px;
+  --body-sm-line-height: 16px;
+  --body-sm-strong-font-size: 11px;
+  --body-sm-strong-font-weight: 500;
+  --body-sm-strong-line-height: 16px;
+  --body-md-font-size: 12px;
+  --body-md-line-height: 18px;
+  --body-base-font-size: 13px;
+  --body-base-line-height: 20px;
+
+  /* heading */
+  --heading-xs-font-size: 13px;
+  --heading-xs-line-height: 20px;
+  --heading-xs-font-weight: 600;
+  --heading-sm-font-size: 16px;
+  --heading-sm-line-height: 24px;
+  --heading-sm-font-weight: 600;
+  --heading-md-font-size: 20px;
+  --heading-md-line-height: 28px;
+  --heading-md-font-weight: 600;
+  --heading-lg-font-size: 22px;
+  --heading-lg-line-height: 30px;
+  --heading-lg-font-weight: 600;
+  --heading-xl-font-size: 24px;
+  --heading-xl-line-height: 32px;
+  --heading-xl-font-weight: 600;
+  --heading-2xl-font-size: 28px;
+  --heading-2xl-line-height: 36px;
+  --heading-2xl-font-weight: 600;
+
+  /* bg */
+  --bg-base-default: #1a1b1d;
+  --bg-base-secondary: #222427;
+  --bg-base-tertiary: #2a2d31;
+  --bg-overlay-l1: rgba(224, 226, 242, 0.04);
+  --bg-overlay-l2: rgba(224, 226, 242, 0.06);
+  --bg-overlay-l3: rgba(224, 226, 242, 0.08);
+  --bg-overlay-l4: rgba(224, 226, 242, 0.12);
+  --bg-menu: #202123;
+  --bg-tooltip: #1a1b1d;
+
+  /* bg-brand */
+  --bg-brand: #32f08c;
+  --bg-brand-hover: #0fdc78;
+  --bg-brand-disabled: rgba(50, 240, 140, 0.2);
+  --bg-brand-popup: rgba(50, 240, 140, 0.12);
+
+  /* text */
+  --text-default: #d1d3db;
+  --text-default-hover: #f5f9fe;
+  --text-default-active: #f5f9fe;
+  --text-secondary: #9599a6;
+  --text-secondary-hover: #d1d3db;
+  --text-tertiary: #666b75;
+  --text-disabled: #666b75;
+  --text-onbrand: #0c0c0d;
+
+  /* text-brand */
+  --text-brand: #32f08c;
+  --text-brand-hover: #0fdc78;
+
+  /* icon */
+  --icon-default: #d1d3db;
+  --icon-default-hover: #f5f9fe;
+  --icon-secondary: #9599a6;
+  --icon-tertiary: #666b75;
+  --icon-onbrand: #0c0c0d;
+
+  /* border */
+  --border-neutral-l1: rgba(224, 226, 242, 0.1);
+  --border-neutral-l2: rgba(224, 226, 242, 0.16);
+  --border-neutral-l3: rgba(224, 226, 242, 0.2);
+  --border-brand: #32f08c;
+
+  /* status */
+  --status-success-default: #33c192;
+  --status-success-surface-l1: rgba(0, 165, 110, 0.18);
+  --status-alert-default: #d29d00;
+  --status-warning-default: #d27e24;
+  --status-warning-surface-l1: rgba(210, 126, 36, 0.16);
+  --status-error-default: #f65a5a;
+  --status-error-surface-l1: rgba(246, 70, 70, 0.18);
+  --status-primary-default: #387bff;
+  --status-primary-surface-l1: rgba(53, 121, 255, 0.18);
+
+  /* accent */
+  --accent-teal: #2dd288;
+  --accent-amber: #dcb364;
+  --accent-violet: #bfa5ff;
+  --accent-magenta: #ec93ff;
+  --accent-cyan: #04cbe5;
+  --accent-blue: #7bb8ff;
+  --accent-coral: #ff9392;
+
+  /* special */
+  --special-white: #ffffff;
+  --special-black: #000000;
+  --special-bgtabsoverlay: rgba(0, 0, 0, 0.2);
+
+  /* semantic aliases */
+  --color-background: var(--bg-base-default);
+  --color-foreground: var(--text-default);
+  --color-card: var(--bg-base-secondary);
+  --color-card-foreground: var(--text-default);
+  --color-primary: var(--bg-brand);
+  --color-primary-foreground: var(--text-onbrand);
+  --color-secondary: var(--bg-base-tertiary);
+  --color-secondary-foreground: var(--text-default);
+  --color-accent: var(--bg-brand);
+  --color-accent-foreground: var(--text-onbrand);
+  --color-border: var(--border-neutral-l1);
+  --color-ring: var(--bg-brand);
+  --color-destructive: var(--status-error-default);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+
+  /* status colors alias for tags */
+  --accent-color: var(--bg-brand);
+}
