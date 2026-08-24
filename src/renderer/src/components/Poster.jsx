@@ -22,7 +22,17 @@ export default function Poster({
   const bg = anime?.coverGradient || coverGradient(name)
 
   if (url && !failed) {
-    return <img className={imgClassName} src={url} alt={name} onError={() => setFailed(true)} style={imgStyle} />
+    return (
+      <img
+        className={imgClassName}
+        src={url}
+        alt={name}
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(true)}
+        style={imgStyle}
+      />
+    )
   }
   return (
     <Tag className={bgClassName} style={{ background: bg, ...style }}>

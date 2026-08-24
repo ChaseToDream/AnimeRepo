@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import {
@@ -24,6 +24,12 @@ const SORT_OPTIONS = [
   { key: 'rating', label: '评分' },
   { key: 'progress', label: '进度' }
 ]
+
+// P4-4：网格虚拟滚动常量（与 .anime-grid 的 gap/padding 对应）
+const GRID_GAP = 16
+const GRID_TOP_PAD = 24    // 顶部/底部留白（与原 grid 上下 padding 一致）
+const GRID_PAD_X = 48      // 左右留白（.anime-grid-v padding 24px * 2）
+const MIN_CARD_W = 160
 
 function PlayIcon() {
   return (
@@ -99,6 +105,38 @@ export default function Library({ filter, setFilter }) {
       : filter.status && filter.status !== 'all'
         ? STATUS_LABEL[filter.status] || '全部番剧'
         : '全部番剧'
+
+  // —— P4-4 网格虚拟滚动：仅渲染可视区域的行，DOM 节点数从数千降到 ~几十 ——
+  const gridWrapRef = useRef(null)
+  const [gridView, setGridView] = useState({ width: 0, height: 0, scrollTop: 0 })
+
+  useEffect(() => {
+    if (view !== 'grid') return
+    const el = gridWrapRef.current
+    if (!el) return
+    const update = () => setGridView((s) => ({ ...s, width: el.clientWidth, height: el.clientHeight }))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [view])
+
+  const grid = useMemo(() => {
+    const w = gridView.width
+    const cols = w > 0 ? Math.max(1, Math.floor((w - GRID_PAD_X + GRID_GAP) / (MIN_CARD_W + GRID_GAP))) : 5
+    const cardW = cols > 0 ? (w - GRID_PAD_X - (cols - 1) * GRID_GAP) / cols : MIN_CARD_W
+    const rowH = cardW * 1.5 + 2
+    const rowCount = Math.ceil(sortedItems.length / cols)
+    const totalH = rowCount > 0 ? rowCount * rowH + (rowCount - 1) * GRID_GAP + GRID_TOP_PAD * 2 : 0
+    // 可视行范围（前后各 overscan 2 行，缓解滚动跳动）
+    const startRow = Math.max(0, Math.floor((gridView.scrollTop - GRID_TOP_PAD) / (rowH + GRID_GAP)) - 2)
+    const endRow = Math.min(rowCount, Math.ceil((gridView.scrollTop + gridView.height - GRID_TOP_PAD) / (rowH + GRID_GAP)) + 2)
+    const rows = []
+    for (let r = startRow; r < endRow; r++) {
+      rows.push({ r, items: sortedItems.slice(r * cols, r * cols + cols) })
+    }
+    return { cols, cardW, rowH, rowCount, totalH, rows }
+  }, [gridView, sortedItems])
 
   const handlePlay = (e, a) => {
     e.stopPropagation()
@@ -294,62 +332,79 @@ export default function Library({ filter, setFilter }) {
             </div>
 
             {view === 'grid' ? (
-              <div className="anime-grid">
-                {sortedItems.map((a) => (
-                  <article
-                    className={'anime-card' + (selected.has(a.id) ? ' is-selected' : '')}
-                    key={a.id}
-                    onClick={() => (selectionMode ? toggleSelect(a.id) : navigate(`/anime/${a.id}`))}
-                  >
-                    {selectionMode && (
-                      <div className={'anime-card__select' + (selected.has(a.id) ? ' is-on' : '')}>
-                        {selected.has(a.id) ? (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-                        ) : null}
-                      </div>
-                    )}
-                    <div className="anime-card__poster">
-                      <Poster anime={a} imgClassName="anime-card__poster-img" bgClassName="anime-card__poster-bg" />
-                      <div className="anime-card__tags">
-                        <span className={'ds-tag ' + (STATUS_TAG_CLASS[a.status] || '')}>
-                          {STATUS_LABEL[a.status] || a.status}
-                        </span>
-                      </div>
-                      <span
-                        className={
-                          'anime-card__progress-badge' +
-                          (a.status === 'completed'
-                            ? ' anime-card__progress-badge--completed'
-                            : a.status === 'plan'
-                              ? ' anime-card__progress-badge--plan'
-                              : '')
-                        }
-                      >
-                        {episodeBadge(a)}
-                      </span>
-                      <div className="anime-card__overlay">
-                        <div className="anime-card__title">{a.title}</div>
-                        <div className="anime-card__meta">
-                          <div className="anime-card__rating">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="icon">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                            </svg>
-                            {a.rating || '—'}
+              <div
+                className="anime-grid-v"
+                ref={gridWrapRef}
+                onScroll={(e) => setGridView((s) => ({ ...s, scrollTop: e.currentTarget.scrollTop }))}
+              >
+                <div className="anime-grid-v__canvas" style={{ height: grid.totalH }}>
+                  {grid.rows.map(({ r, items }) => (
+                    <div
+                      key={r}
+                      className="anime-grid-v__row"
+                      style={{
+                        transform: `translateY(${GRID_TOP_PAD + r * (grid.rowH + GRID_GAP)}px)`,
+                        gridTemplateColumns: `repeat(${grid.cols}, ${grid.cardW}px)`
+                      }}
+                    >
+                      {items.map((a) => (
+                        <article
+                          className={'anime-card' + (selected.has(a.id) ? ' is-selected' : '')}
+                          key={a.id}
+                          onClick={() => (selectionMode ? toggleSelect(a.id) : navigate(`/anime/${a.id}`))}
+                        >
+                          {selectionMode && (
+                            <div className={'anime-card__select' + (selected.has(a.id) ? ' is-on' : '')}>
+                              {selected.has(a.id) ? (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                              ) : null}
+                            </div>
+                          )}
+                          <div className="anime-card__poster">
+                            <Poster anime={a} imgClassName="anime-card__poster-img" bgClassName="anime-card__poster-bg" />
+                            <div className="anime-card__tags">
+                              <span className={'ds-tag ' + (STATUS_TAG_CLASS[a.status] || '')}>
+                                {STATUS_LABEL[a.status] || a.status}
+                              </span>
+                            </div>
+                            <span
+                              className={
+                                'anime-card__progress-badge' +
+                                (a.status === 'completed'
+                                  ? ' anime-card__progress-badge--completed'
+                                  : a.status === 'plan'
+                                    ? ' anime-card__progress-badge--plan'
+                                    : '')
+                              }
+                            >
+                              {episodeBadge(a)}
+                            </span>
+                            <div className="anime-card__overlay">
+                              <div className="anime-card__title">{a.title}</div>
+                              <div className="anime-card__meta">
+                                <div className="anime-card__rating">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="icon">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                  </svg>
+                                  {a.rating || '—'}
+                                </div>
+                                <span className="anime-card__genres">{(a.genres || []).slice(0, 2).join('/')}</span>
+                              </div>
+                            </div>
+                            <div className="anime-card__progress-bar">
+                              <div className="anime-card__progress-fill" style={{ width: progressPct(a) + '%' }} />
+                            </div>
+                            <div className="anime-card__play-overlay" onClick={(e) => handlePlay(e, a)}>
+                              <div className="anime-card__play-btn">
+                                <PlayIcon />
+                              </div>
+                            </div>
                           </div>
-                          <span className="anime-card__genres">{(a.genres || []).slice(0, 2).join('/')}</span>
-                        </div>
-                      </div>
-                      <div className="anime-card__progress-bar">
-                        <div className="anime-card__progress-fill" style={{ width: progressPct(a) + '%' }} />
-                      </div>
-                      <div className="anime-card__play-overlay" onClick={(e) => handlePlay(e, a)}>
-                        <div className="anime-card__play-btn">
-                          <PlayIcon />
-                        </div>
-                      </div>
+                        </article>
+                      ))}
                     </div>
-                  </article>
-                ))}
+                  ))}
+                </div>
               </div>
             ) : (
               <div className="anime-list-wrap">

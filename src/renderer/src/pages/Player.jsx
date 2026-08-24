@@ -84,7 +84,7 @@ function Switch({ on, onChange, label, disabled }) {
 export default function Player() {
   const { animeId, epId } = useParams()
   const navigate = useNavigate()
-  const { library, getAnime, setProgress, updateSettings, updateAnime, settings } = useApp()
+  const { library, getAnime, setProgress, setProgressSilent, updateSettings, updateAnime, settings } = useApp()
 
   const anime = getAnime(animeId)
   const ep = anime?.episodes?.find((e) => e.id === epId)
@@ -222,9 +222,10 @@ export default function Player() {
     const now = Date.now()
     if (now - lastSaveRef.current >= PROGRESS_SAVE_INTERVAL) {
       lastSaveRef.current = now
-      setProgress(animeId, epId, v.currentTime, v.duration || 0)
+      // P4-5：播放中静默保存，不触发全局重渲染；退出/切集时由 flushProgress 同步一次
+      setProgressSilent(animeId, epId, v.currentTime, v.duration || 0)
     }
-  }, [animeId, epId, setProgress])
+  }, [animeId, epId, setProgressSilent])
 
   // 切换剧集 / 卸载时保存一次
   useEffect(() => {

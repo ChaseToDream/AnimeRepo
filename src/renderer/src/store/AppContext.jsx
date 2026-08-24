@@ -146,6 +146,12 @@ export function AppProvider({ children }) {
     []
   )
 
+  // P4-5：静默保存播放进度——只写主进程存储，不回流全局 library state，
+  // 避免播放期间每 5 秒一次 setLibrary 触发全应用重渲染（仅退出/切换时用 setProgress 同步一次）
+  const setProgressSilent = useCallback(async (animeId, epId, seconds, duration) => {
+    await api.setProgress(animeId, epId, seconds, duration)
+  }, [])
+
   const setWatched = useCallback(async (animeId, epId, watched) => {
     const updated = await api.setWatched(animeId, epId, watched)
     if (updated) {
@@ -188,6 +194,7 @@ export function AppProvider({ children }) {
     mergeAnime,
     splitAnime,
     setProgress,
+    setProgressSilent,
     setWatched,
     updateSettings,
     addFolder,
