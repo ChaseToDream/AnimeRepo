@@ -9,17 +9,17 @@ const VIDEO_EXT = /\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|m2ts|rmvb|rm)$/i
 const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub)$/i
 const METADATA_CONCURRENCY = 3
 
-// 在视频同目录查找最匹配的字幕文件（启用 scanSubtitle 时使用）
+// 在视频同目录查找全部候选字幕文件（启用 scanSubtitle 时使用），按优先级排序返回路径数组
 // 优先级：同名 > 同名前缀 > 含中文字幕标记 > 扩展名 srt > ass
-function findSubtitle(videoFile, folder, dirCache) {
-  if (!videoFile || !folder) return ''
+function findSubtitles(videoFile, folder, dirCache) {
+  if (!videoFile || !folder) return []
   try {
     let entries = dirCache ? dirCache.get(folder) : null
     if (!entries) {
       entries = fs.readdirSync(folder).filter((n) => SUBTITLE_EXT.test(n))
       if (dirCache) dirCache.set(folder, entries)
     }
-    if (!entries.length) return ''
+    if (!entries.length) return []
     const base = path.basename(videoFile).replace(/\.[^.]+$/, '').toLowerCase()
     const rank = (name) => {
       const n = path.basename(name).replace(/\.[^.]+$/, '').toLowerCase()
@@ -32,9 +32,9 @@ function findSubtitle(videoFile, folder, dirCache) {
       return score
     }
     entries.sort((a, b) => rank(b) - rank(a))
-    return path.join(folder, entries[0])
+    return entries.map((n) => path.join(folder, n))
   } catch (e) {
-    return ''
+    return []
   }
 }
 
@@ -173,7 +173,7 @@ async function scanLibrary(store, folders, settings, onProgress) {
       const existingMap = new Map(anime.episodes.map((e) => [e.number, e]))
       const episodes = g.episodes.map((ge) => {
         const old = existingMap.get(ge.number)
-        const sub = settings && settings.scanSubtitle ? findSubtitle(ge.file, g.path, dirCache) : ''
+        const subs = settings && settings.scanSubtitle ? findSubtitles(ge.file, g.path, dirCache) : []
         return {
           id: old ? old.id : `${anime.id}-ep${ge.number}`,
           animeId: anime.id,
@@ -185,7 +185,8 @@ async function scanLibrary(store, folders, settings, onProgress) {
           progress: old ? old.progress : 0,
           airDate: old ? old.airDate : '',
           season: g.season,
-          subtitlePath: sub || (old ? old.subtitlePath : '')
+          subtitlePath: subs[0] || (old ? old.subtitlePath : ''),
+          subtitlePaths: subs.length ? subs : (old && Array.isArray(old.subtitlePaths) ? old.subtitlePaths : [])
         }
       })
       anime = store.updateAnime(anime.id, {
@@ -211,7 +212,7 @@ async function scanLibrary(store, folders, settings, onProgress) {
       // N8：封面下载到本地缓存（失败时回退为原网络 URL）
       if (info.coverUrl) info.coverUrl = await cacheCover(info.coverUrl)
       const episodes = g.episodes.map((ge, i) => {
-        const sub = settings && settings.scanSubtitle ? findSubtitle(ge.file, g.path, dirCache) : ''
+        const subs = settings && settings.scanSubtitle ? findSubtitles(ge.file, g.path, dirCache) : []
         return {
           id: `${id}-ep${ge.number}`,
           animeId: id,
@@ -223,7 +224,8 @@ async function scanLibrary(store, folders, settings, onProgress) {
           progress: 0,
           airDate: '',
           season: g.season,
-          subtitlePath: sub
+          subtitlePath: subs[0] || '',
+          subtitlePaths: subs
         }
       })
       anime = store.upsert({

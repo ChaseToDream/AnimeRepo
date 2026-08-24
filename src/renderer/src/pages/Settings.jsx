@@ -634,32 +634,60 @@ export default function Settings() {
 
           {/* ══ 数据管理 ══ */}
           {activeSection === 'data' && (
-            <div className="ds-settingrow__group">
-              <div className="ds-settingrow__panel">
-                <SettingRow
-                  title="导出数据"
-                  desc="将所有番剧数据和设置导出为 JSON 文件"
-                  control={<button className="ds-btn ds-btn--secondary" onClick={handleExport}>导出数据</button>}
-                />
-                <SettingRow
-                  title="导入数据"
-                  desc="从 JSON 文件导入番剧数据和设置"
-                  control={<button className="ds-btn ds-btn--secondary" onClick={handleImport}>导入数据</button>}
-                />
-                <SettingRow
-                  title="重建数据库"
-                  desc="重建番剧索引数据库，可能需要几分钟"
-                  control={<button className="ds-btn ds-btn--secondary" onClick={handleRebuild}>重建数据库</button>}
-                />
-                <SettingRow
-                  title="重置所有数据"
-                  desc="删除所有数据和设置，恢复到初始状态"
-                  control={
-                    <button className="ds-btn settings-danger-btn" onClick={handleReset}>重置所有数据</button>
-                  }
-                />
+            <>
+              <div className="ds-settingrow__group">
+                <div className="ds-settingrow__panel">
+                  <SettingRow
+                    title="导出数据"
+                    desc="将所有番剧数据和设置导出为 JSON 文件"
+                    control={<button className="ds-btn ds-btn--secondary" onClick={handleExport}>导出数据</button>}
+                  />
+                  <SettingRow
+                    title="导入数据"
+                    desc="从 JSON 文件导入番剧数据和设置"
+                    control={<button className="ds-btn ds-btn--secondary" onClick={handleImport}>导入数据</button>}
+                  />
+                  <SettingRow
+                    title="重建数据库"
+                    desc="重建番剧索引数据库，可能需要几分钟"
+                    control={<button className="ds-btn ds-btn--secondary" onClick={handleRebuild}>重建数据库</button>}
+                  />
+                  <SettingRow
+                    title="重置所有数据"
+                    desc="删除所有数据和设置，恢复到初始状态"
+                    control={
+                      <button className="ds-btn settings-danger-btn" onClick={handleReset}>重置所有数据</button>
+                    }
+                  />
+                </div>
               </div>
-            </div>
+
+              <div className="ds-settingrow__group">
+                <span className="ds-settingrow__grouplabel">同步与工具</span>
+                <div className="ds-settingrow__panel">
+                  {/* N5 骨架：AniList 双向同步（OAuth 配置 + 进度/状态同步） */}
+                  <SettingRow
+                    title="AniList 同步"
+                    desc="登录后双向同步观看进度与追番状态（开发中）"
+                    control={
+                      <button className="ds-btn ds-btn--secondary" onClick={() => showToast('AniList 同步即将上线', 'warning')}>
+                        连接 AniList
+                      </button>
+                    }
+                  />
+                  {/* N11 骨架：上传封面到远程 / 导出缩略图等工具 */}
+                  <SettingRow
+                    title="封面云上传"
+                    desc="将本地封面缓存上传到图床，支持远程访问（开发中）"
+                    control={
+                      <button className="ds-btn ds-btn--secondary" onClick={() => showToast('封面云上传即将上线', 'warning')}>
+                        上传封面
+                      </button>
+                    }
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           {/* ══ 关于 ══ */}

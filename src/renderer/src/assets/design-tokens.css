@@ -156,3 +156,45 @@
   /* status colors alias for tags */
   --accent-color: var(--bg-brand);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   N9 浅色主题：通过 <html data-theme="light"> 覆盖核心 token
+   ═══════════════════════════════════════════════════════════════ */
+:root[data-theme='light'] {
+  /* bg */
+  --bg-base-default: #f5f6f8;
+  --bg-base-secondary: #ffffff;
+  --bg-base-tertiary: #eceef2;
+  --bg-overlay-l1: rgba(15, 23, 42, 0.04);
+  --bg-overlay-l2: rgba(15, 23, 42, 0.06);
+  --bg-overlay-l3: rgba(15, 23, 42, 0.08);
+  --bg-overlay-l4: rgba(15, 23, 42, 0.12);
+  --bg-menu: #ffffff;
+  --bg-tooltip: #ffffff;
+
+  /* text */
+  --text-default: #23262f;
+  --text-default-hover: #0b0e14;
+  --text-default-active: #0b0e14;
+  --text-secondary: #5a6170;
+  --text-secondary-hover: #23262f;
+  --text-tertiary: #8a919d;
+  --text-disabled: #aab0bb;
+
+  /* icon */
+  --icon-default: #3a3f4b;
+  --icon-default-hover: #0b0e14;
+  --icon-secondary: #6b7280;
+  --icon-tertiary: #9ca3af;
+
+  /* border */
+  --border-neutral-l1: rgba(15, 23, 42, 0.1);
+  --border-neutral-l2: rgba(15, 23, 42, 0.16);
+  --border-neutral-l3: rgba(15, 23, 42, 0.22);
+
+  /* status surfaces（浅色下降低透明度） */
+  --status-success-surface-l1: rgba(0, 165, 110, 0.14);
+  --status-warning-surface-l1: rgba(210, 126, 36, 0.14);
+  --status-error-surface-l1: rgba(246, 70, 70, 0.14);
+  --status-primary-surface-l1: rgba(53, 121, 255, 0.14);
+}

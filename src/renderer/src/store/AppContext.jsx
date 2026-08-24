@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import api from '../lib/api'
 import Toasts from '../components/Toasts'
+import { createTranslator } from '../lib/i18n'
 
 const AppContext = createContext(null)
 
@@ -50,6 +51,23 @@ export function AppProvider({ children }) {
       document.documentElement.style.setProperty('--accent-color', settings.accentColor)
     }
   }, [settings?.accentColor])
+
+  // N9：主题模式应用（深色 / 浅色 / 跟随系统）
+  useEffect(() => {
+    const mode = settings?.themeMode || '深色'
+    const apply = (light) => {
+      if (light) document.documentElement.dataset.theme = 'light'
+      else delete document.documentElement.dataset.theme
+    }
+    if (mode === '跟随系统') {
+      const mq = window.matchMedia('(prefers-color-scheme: light)')
+      const handler = (e) => apply(e.matches)
+      apply(mq.matches)
+      mq.addEventListener('change', handler)
+      return () => mq.removeEventListener('change', handler)
+    }
+    apply(mode === '浅色')
+  }, [settings?.themeMode])
 
   // O4：订阅扫描进度事件（主进程在扫描过程中推送）
   useEffect(() => {
@@ -178,6 +196,9 @@ export function AppProvider({ children }) {
     return folders
   }, [])
 
+  // N7：基于 uiLanguage 的翻译函数
+  const t = useMemo(() => createTranslator(settings?.uiLanguage), [settings?.uiLanguage])
+
   const value = {
     library,
     settings,
@@ -201,6 +222,7 @@ export function AppProvider({ children }) {
     removeFolder,
     showToast,
     dismissToast,
+    t,
     api
   }
 

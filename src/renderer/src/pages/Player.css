@@ -682,3 +682,17 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* ===== N10 播放队列：下一集标记 ===== */
+.ep-item.is-next { background: var(--bg-overlay-l2); }
+.ep-item__next-tag {
+  display: inline-block;
+  margin-left: var(--spacer-6);
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 14px;
+  color: var(--text-onbrand);
+  background: var(--bg-brand);
+  border-radius: var(--radius-4);
+  vertical-align: 1px;
+}

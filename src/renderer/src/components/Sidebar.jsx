@@ -6,7 +6,7 @@ import api from '../lib/api'
 
 // 侧边导航：用于番剧库/统计/设置等带完整外壳的页面
 export default function Sidebar({ activeFilter, onFilterChange }) {
-  const { library, settings, addFolder, refresh } = useApp()
+  const { library, settings, addFolder, refresh, t } = useApp()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [section, setSection] = useState('library')
@@ -34,7 +34,7 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
             </svg>
             <input
               type="text"
-              placeholder="搜索番剧..."
+              placeholder={t('nav.search')}
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value)
@@ -45,14 +45,14 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
         </div>
 
         <div className="ds-navlist__group">
-          <div className="ds-navlist__group-title">我的番剧</div>
+          <div className="ds-navlist__group-title">{t('nav.myGroup')}</div>
           {[
-            ['all', '全部番剧', total],
-            ['watching', '正在观看', countBy('watching')],
-            ['completed', '已完成', countBy('completed')],
-            ['plan', '想看', countBy('plan')],
-            ['onhold', '搁置', countBy('onhold')]
-          ].map(([key, label, count]) => (
+            ['all', total],
+            ['watching', countBy('watching')],
+            ['completed', countBy('completed')],
+            ['plan', countBy('plan')],
+            ['onhold', countBy('onhold')]
+          ].map(([key, count]) => (
             <button
               key={key}
               className={
@@ -67,14 +67,14 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
                 {key === 'watching' ? <polygon points="5 3 19 12 5 21 5 3" /> : key === 'all' ? <rect x="3" y="3" width="18" height="18" rx="2" /> : <circle cx="12" cy="12" r="9" />}
               </svg>
-              <span className="ds-navlist__label">{label}</span>
+              <span className="ds-navlist__label">{t(`nav.${key}`)}</span>
               <span className="ds-navlist__badge">{count}</span>
             </button>
           ))}
         </div>
 
         <div className="ds-navlist__group">
-          <div className="ds-navlist__group-title">浏览</div>
+          <div className="ds-navlist__group-title">{t('nav.browse')}</div>
           <button
             className={'ds-navlist__item ' + (activeFilter === 'stats' || (section === 'stats') ? 'is-active' : '')}
             onClick={() => {
@@ -85,7 +85,7 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
               <line x1="4" y1="20" x2="20" y2="20" /><line x1="6" y1="20" x2="6" y2="10" /><line x1="11" y1="20" x2="11" y2="4" /><line x1="16" y1="20" x2="16" y2="13" />
             </svg>
-            <span className="ds-navlist__label">统计面板</span>
+            <span className="ds-navlist__label">{t('nav.stats')}</span>
           </button>
           <button
             className={'ds-navlist__item ' + (activeFilter === 'recent' && section === 'library' ? 'is-active' : '')}
@@ -98,12 +98,12 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
               <polygon points="12 2 2 7 12 12 22 7 12 2" /><path d="M2 17 12 22l10-5" /><path d="M2 12l10 5 10-5" />
             </svg>
-            <span className="ds-navlist__label">最近观看</span>
+            <span className="ds-navlist__label">{t('nav.recent')}</span>
           </button>
         </div>
 
         <div className="ds-navlist__group">
-          <div className="ds-navlist__group-title">分类</div>
+          <div className="ds-navlist__group-title">{t('nav.category')}</div>
           <div className="ds-navlist__genres">
             {genreSet.slice(0, 8).map((g) => (
               <span
@@ -118,7 +118,7 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
                 {g}
               </span>
             ))}
-            {genreSet.length === 0 && <span className="text-tertiary" style={{ fontSize: 10 }}>扫描后可生成分类</span>}
+            {genreSet.length === 0 && <span className="text-tertiary" style={{ fontSize: 10 }}>{t('nav.emptyGenres')}</span>}
           </div>
         </div>
       </nav>
@@ -128,11 +128,11 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
-          <span>媒体库</span>
+          <span>{t('nav.media')}</span>
         </button>
         <button
           className="ds-btn ds-btn--sm ds-btn--icon ds-btn--tertiary"
-          aria-label="设置"
+          aria-label={t('nav.settings')}
           onClick={() => {
             setSection('settings')
             navigate('/settings')

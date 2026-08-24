@@ -40,7 +40,7 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning, batchAnime, showToast } = useApp()
+  const { library, scan, scanning, batchAnime, showToast, addFolder } = useApp()
   const navigate = useNavigate()
   const [view, setView] = useState('grid')
   const [sort, setSort] = useState('created')
@@ -144,6 +144,12 @@ export default function Library({ filter, setFilter }) {
     if (ep) navigate(`/player/${a.id}/${ep.id}`)
   }
 
+  // U1：首次引导——添加媒体库后立即触发扫描
+  const handleAddFolder = async () => {
+    const folders = await addFolder()
+    if (folders && folders.length) scan()
+  }
+
   // —— N4 多选与批量操作 ——
   const enterSelection = () => {
     setSelected(new Set())
@@ -238,15 +244,27 @@ export default function Library({ filter, setFilter }) {
 
       <div className="library__scroll">
         {library.length === 0 ? (
-          <div className="library-empty">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="library-empty__icon">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-            <div className="library-empty__title">请添加媒体库并扫描</div>
-            <div className="library-empty__desc">在设置中添加媒体库文件夹，或点击「扫描媒体库」开始导入番剧。</div>
-            <button className="ds-btn ds-btn--brand" onClick={() => navigate('/settings')}>
-              前往设置
-            </button>
+          <div className="library-empty library-empty--wizard">
+            <div className="wizard-icon">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+            </div>
+            <div className="library-empty__title">欢迎使用 AnimeRepo 溯番</div>
+            <div className="library-empty__desc">三步开始你的番剧库：</div>
+            <div className="wizard-steps">
+              <div className="wizard-step"><span className="wizard-step__num">1</span>添加媒体库文件夹（存放番剧视频的目录）</div>
+              <div className="wizard-step"><span className="wizard-step__num">2</span>自动扫描并识别番剧与剧集</div>
+              <div className="wizard-step"><span className="wizard-step__num">3</span>开始观看并记录进度</div>
+            </div>
+            <div className="library-empty__actions">
+              <button className="ds-btn ds-btn--brand" onClick={handleAddFolder}>
+                添加媒体库文件夹
+              </button>
+              <button className="ds-btn ds-btn--secondary" onClick={() => navigate('/settings')}>
+                前往设置
+              </button>
+            </div>
           </div>
         ) : items.length === 0 ? (
           <div className="library-empty">

@@ -11,7 +11,7 @@ import Settings from './pages/Settings'
 
 // 带侧边栏的外壳布局（番剧库 / 统计 / 设置）
 function ShellLayout({ onFilterChange, activeFilter }) {
-  const { library, settings, scanning, scanProgress } = useApp()
+  const { library, settings, scanning, scanProgress, t } = useApp()
   const location = useLocation()
   const totalEpisodes = library.reduce((n, a) => n + (a.episodes?.length || 0), 0)
   const isStats = location.pathname.startsWith('/stats')
@@ -20,14 +20,14 @@ function ShellLayout({ onFilterChange, activeFilter }) {
   const scanText = scanning
     ? scanProgress
       ? scanProgress.phase === 'metadata'
-        ? `正在获取元数据 ${scanProgress.current}/${scanProgress.total}`
-        : `正在扫描… 已发现 ${scanProgress.found} 个文件`
-      : '正在扫描…'
+        ? t('status.metadata', { c: scanProgress.current, t: scanProgress.total })
+        : t('status.found', { n: scanProgress.found })
+      : t('status.scanning')
     : isSettings
-      ? '设置'
+      ? t('status.settings')
       : isStats
-        ? '统计面板'
-        : '番剧库'
+        ? t('status.stats')
+        : t('status.library')
 
   return (
     <div className="app-shell">
@@ -49,7 +49,7 @@ function ShellLayout({ onFilterChange, activeFilter }) {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>
-              自动同步已开启
+              {t('status.autoSync')}
             </span>
           )}
         </div>
@@ -58,7 +58,7 @@ function ShellLayout({ onFilterChange, activeFilter }) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
               <polygon points="12 2 2 7 12 12 22 7 12 2" />
             </svg>
-            {library.length} 部番剧 · {totalEpisodes} 集
+            {t('status.count', { n: library.length, e: totalEpisodes })}
           </span>
         </div>
         <div className="ds-statusbar__group">
@@ -67,7 +67,7 @@ function ShellLayout({ onFilterChange, activeFilter }) {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
                 <path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
               </svg>
-              已用 {settings.libraryFolders.length} 个媒体库
+              {t('status.libraries', { n: settings.libraryFolders.length })}
             </span>
           ) : null}
           <span className="ds-statusbar__item">

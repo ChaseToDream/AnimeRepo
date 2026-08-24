@@ -6,6 +6,7 @@ import { ensureDataFile, getSettings, flushSaveSync } from './store'
 import { registerIpc } from './ipc'
 import { VIDEO_EXT } from './scanner'
 import { getCoverDir } from './coverCache'
+import { startAutoSync, stopAutoSync } from './autosync'
 
 // 自定义协议：anime://local/<base64path> 用于安全加载本地视频
 protocol.registerSchemesAsPrivileged([
@@ -103,6 +104,9 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // N2：启动定时后台扫描（由 autoScanOnStartup 开关控制）
+  startAutoSync()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -117,4 +121,9 @@ app.on('window-all-closed', () => {
 // P4-3：退出前同步落盘，避免异步合并写未完成导致数据丢失
 app.on('before-quit', () => {
   flushSaveSync()
+})
+
+// N2：退出时停止定时后台扫描
+app.on('will-quit', () => {
+  stopAutoSync()
 })

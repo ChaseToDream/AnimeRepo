@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import WindowControls from '../components/WindowControls'
@@ -125,6 +125,8 @@ export default function Player() {
   // —— 字幕 ——
   const [subtitleText, setSubtitleText] = useState('')
   const [vttUrl, setVttUrl] = useState('')
+  // N1：多字幕轨选择
+  const [subtitleIndex, setSubtitleIndex] = useState(0)
 
   // —— 播放错误态 ——
   const [playError, setPlayError] = useState('')
@@ -232,6 +234,7 @@ export default function Player() {
     lastSaveRef.current = 0
     progressRef.current = { time: 0, dur: 0 }
     setPlayError('')
+    setSubtitleIndex(0)
     return () => {
       flushProgress()
     }
@@ -276,17 +279,25 @@ export default function Player() {
   }
 
   // —— 字幕 ——
-  // 加载当前剧集字幕文件内容
+  // 当前剧集可用字幕轨（N1：支持多字幕选择；兼容旧 subtitlePath 数据）
+  const subtitleList = useMemo(() => {
+    const paths = ep?.subtitlePaths || []
+    if (paths.length) return paths
+    return ep?.subtitlePath ? [ep.subtitlePath] : []
+  }, [ep])
+
+  // 加载当前选择的字幕轨内容
   useEffect(() => {
     let cancelled = false
     setSubtitleText('')
-    if (ep?.subtitlePath) {
-      api.readSubtitle(ep.subtitlePath)
+    const target = subtitleList[subtitleIndex]
+    if (target) {
+      api.readSubtitle(target)
         .then((text) => { if (!cancelled && text) setSubtitleText(text) })
         .catch(() => {})
     }
     return () => { cancelled = true }
-  }, [epId, ep?.subtitlePath])
+  }, [epId, subtitleIndex, subtitleList])
 
   // 字幕文本 → WebVTT Blob URL（供 <track> 使用）
   useEffect(() => {
@@ -670,6 +681,23 @@ export default function Player() {
                   <>
                     <div className="settings-group">
                       <div className="settings-group__title">字幕</div>
+                      {subtitleList.length > 1 && (
+                        <div className="setting-row">
+                          <span className="setting-row__label">字幕轨</span>
+                          <select
+                            className="setting-select"
+                            value={subtitleIndex}
+                            onChange={(e) => setSubtitleIndex(Number(e.target.value))}
+                            aria-label="字幕轨"
+                          >
+                            {subtitleList.map((p, i) => (
+                              <option key={i} value={i}>
+                                {i === 0 ? '自动匹配' : `字幕 ${i + 1}`} · {String(p).split(/[\\/]/).pop()}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div className="setting-row">
                         <span className="setting-row__label">字幕大小</span>
                         <select className="setting-select" value={subSize} onChange={(e) => { setSubSize(e.target.value); persist({ subtitleFontSize: e.target.value }) }} aria-label="字幕大小">
@@ -718,7 +746,7 @@ export default function Player() {
         {!sidebarCollapsed && (
           <aside className="player-sidebar">
             <div className="player-sidebar__header">
-              <span className="player-sidebar__title">播放列表</span>
+              <span className="player-sidebar__title">播放队列 · {episodes.length} 集</span>
               <button className="player-sidebar__collapse" aria-label="收起" onClick={() => setSidebarCollapsed(true)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
               </button>
@@ -736,9 +764,11 @@ export default function Player() {
                 <ul className="ep-list">
                   {episodes.map((e) => {
                     const isPlaying = e.id === epId
+                    const isNext = !e.watched && !isPlaying && nextEp?.id === e.id
                     const classes = [
                       'ep-item',
                       isPlaying ? 'is-playing' : '',
+                      isNext ? 'is-next' : '',
                       e.watched ? 'is-watched' : ''
                     ].filter(Boolean).join(' ')
                     return (
@@ -752,7 +782,10 @@ export default function Player() {
                         </div>
                         <span className="ep-item__num">{String(e.number ?? 0).padStart(2, '0')}</span>
                         <div className="ep-item__main">
-                          <div className="ep-item__title">{e.title || `第 ${e.number} 话`}</div>
+                          <div className="ep-item__title">
+                            {e.title || `第 ${e.number} 话`}
+                            {isNext && <span className="ep-item__next-tag">下一集</span>}
+                          </div>
                           <div className="ep-item__meta">
                             {e.duration > 0 && <span className="ep-item__duration">{formatTime(e.duration)}</span>}
                             {e.progress > 0 && !e.watched && e.duration > 0 && (
