@@ -1,5 +1,5 @@
 // IPC 处理器：注册所有渲染进程可调用的通道
-import { ipcMain, dialog, app, shell } from 'electron'
+import { ipcMain, dialog, app, shell, BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import * as store from './store'
@@ -7,13 +7,21 @@ import { scanLibrary, rebuildDatabase } from './scanner'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
 
+// 扫描进度推送：向发起扫描的窗口发送 scan:progress 事件
+function scanProgressSender(sender) {
+  const win = BrowserWindow.fromWebContents(sender)
+  return (info) => {
+    if (win && !win.isDestroyed()) win.webContents.send('scan:progress', info)
+  }
+}
+
 export function registerIpc() {
   // —— 番剧库 ——
   ipcMain.handle('library:get', () => store.list())
   ipcMain.handle('library:get-one', (_e, id) => store.get(id))
-  ipcMain.handle('library:scan', async () => {
+  ipcMain.handle('library:scan', async (e) => {
     const settings = store.getSettings()
-    return scanLibrary(store, settings.libraryFolders || [], settings)
+    return scanLibrary(store, settings.libraryFolders || [], settings, scanProgressSender(e.sender))
   })
   ipcMain.handle('anime:update', (_e, id, patch) => store.updateAnime(id, patch))
   ipcMain.handle('anime:remove', (_e, id) => store.remove(id))
@@ -62,9 +70,9 @@ export function registerIpc() {
     const raw = fs.readFileSync(res.filePaths[0], 'utf-8')
     return store.importJson(raw)
   })
-  ipcMain.handle('data:rebuild', async () => {
+  ipcMain.handle('data:rebuild', async (e) => {
     const settings = store.getSettings()
-    return rebuildDatabase(store, settings.libraryFolders || [], settings)
+    return rebuildDatabase(store, settings.libraryFolders || [], settings, scanProgressSender(e.sender))
   })
   ipcMain.handle('data:reset', () => {
     store.reset()

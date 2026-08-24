@@ -11,11 +11,23 @@ import Settings from './pages/Settings'
 
 // 带侧边栏的外壳布局（番剧库 / 统计 / 设置）
 function ShellLayout({ onFilterChange, activeFilter }) {
-  const { library, settings, scanning } = useApp()
+  const { library, settings, scanning, scanProgress } = useApp()
   const location = useLocation()
   const totalEpisodes = library.reduce((n, a) => n + (a.episodes?.length || 0), 0)
   const isStats = location.pathname.startsWith('/stats')
   const isSettings = location.pathname.startsWith('/settings')
+  // O4：扫描状态文案（收集 / 元数据阶段分别展示）
+  const scanText = scanning
+    ? scanProgress
+      ? scanProgress.phase === 'metadata'
+        ? `正在获取元数据 ${scanProgress.current}/${scanProgress.total}`
+        : `正在扫描… 已发现 ${scanProgress.found} 个文件`
+      : '正在扫描…'
+    : isSettings
+      ? '设置'
+      : isStats
+        ? '统计面板'
+        : '番剧库'
 
   return (
     <div className="app-shell">
@@ -30,7 +42,7 @@ function ShellLayout({ onFilterChange, activeFilter }) {
         <div className="ds-statusbar__group">
           <span className="ds-statusbar__item">
             <span className="ds-statusbar__dot" style={{ background: scanning ? 'var(--status-warning-default)' : 'var(--status-success-default)' }} />
-            {scanning ? '正在扫描…' : isSettings ? '设置' : isStats ? '统计面板' : '番剧库'}
+            {scanText}
           </span>
           {!isSettings && (
             <span className="ds-statusbar__item">

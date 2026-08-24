@@ -3,9 +3,11 @@ import fs from 'fs'
 import path from 'path'
 import { parseFilename, titleKey } from './parser'
 import { offlineDefaults, fetchOnline } from './metadata'
+import { cacheCover } from './coverCache'
 
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|m2ts|rmvb|rm)$/i
 const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub)$/i
+const METADATA_CONCURRENCY = 3
 
 // 在视频同目录查找最匹配的字幕文件（启用 scanSubtitle 时使用）
 // 优先级：同名 > 同名前缀 > 含中文字幕标记 > 扩展名 srt > ass
@@ -36,14 +38,14 @@ function findSubtitle(videoFile, folder, dirCache) {
   }
 }
 
-// 将库目录拆分为「番剧级文件夹」候选：番剧通常一个目录对应一部番
-function walkFiles(root, handl) {
+// 异步递归遍历（P4-1：readdirSync → readdir 异步，避免大库扫描阻塞主进程）
+async function walkFiles(root, onFile) {
   const stack = [root]
   while (stack.length) {
     const dir = stack.pop()
     let entries
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true })
+      entries = await fs.promises.readdir(dir, { withFileTypes: true })
     } catch (e) {
       continue
     }
@@ -52,21 +54,70 @@ function walkFiles(root, handl) {
       if (ent.isDirectory()) {
         stack.push(full)
       } else if (ent.isFile() && VIDEO_EXT.test(ent.name)) {
-        handl(full)
+        onFile(full)
       }
     }
   }
 }
 
+// N6：读取本地 .nfo 信息（Kodi/Emby 风格，正则解析，不引入 XML 依赖）
+function readLocalInfo(folder) {
+  if (!folder) return null
+  try {
+    let nfo = ''
+    for (const name of fs.readdirSync(folder)) {
+      if (/\.nfo$/i.test(name)) { nfo = path.join(folder, name); break }
+    }
+    if (!nfo) return null
+    const text = fs.readFileSync(nfo, 'utf-8')
+    const get = (tag) => {
+      const m = text.match(new RegExp(`<${tag}>(?:<!\\[CDATA\\[)?([^<]*?)(?:\\]\\]>)?</${tag}>`, 'i'))
+      return m ? m[1].trim() : ''
+    }
+    const genres = [...text.matchAll(/<genre>(?:<!\[CDATA\[)?([^<]*?)(?:\]\]>)?<\/genre>/gi)]
+      .map((m) => m[1].trim())
+      .filter(Boolean)
+    const info = {
+      title: get('title') || get('originaltitle') || get('tvdbTitle'),
+      description: get('plot') || get('overview'),
+      year: parseInt(get('year'), 10) || 0,
+      airDate: get('premiered') || get('aired'),
+      studio: get('studio'),
+      genres
+    }
+    if (!info.title && !info.description && !info.year && !genres.length) return null
+    return info
+  } catch (e) {
+    return null
+  }
+}
+
+// 并发限流执行器（P4-2：元数据请求并发，避免串行等待）
+async function runPool(items, concurrency, fn) {
+  if (!items.length) return
+  let idx = 0
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (idx < items.length) {
+      const i = idx++
+      await fn(items[i], i)
+    }
+  })
+  await Promise.all(workers)
+}
+
 // 主扫描：返回新增/更新后的番剧列表
-async function scanLibrary(store, folders, settings) {
+// onProgress：可选进度回调，阶段 collect（已发现文件数）/ metadata（在线元数据下载进度）
+async function scanLibrary(store, folders, settings, onProgress) {
   const result = { scanned: 0, added: 0, updated: 0 }
 
-  // 收集全部文件
+  // 收集全部文件（P4-1：异步遍历，避免阻塞主进程）
   const files = []
   for (const folder of folders || []) {
     try {
-      walkFiles(folder, (f) => files.push(f))
+      await walkFiles(folder, (f) => {
+        files.push(f)
+        onProgress?.({ phase: 'collect', found: files.length })
+      })
     } catch (e) {
       continue
     }
@@ -95,6 +146,22 @@ async function scanLibrary(store, folders, settings) {
       number: parsed.number,
       epTitle: parsed.epTitle
     })
+  }
+
+  // P4-2/O5：并发预取「新番剧」在线元数据（并发限流 + fetchOnline 内存缓存，避免逐个串行等待）
+  const onlineCache = new Map()
+  if (settings && settings.autoDownload) {
+    const pending = [...groups.values()].filter((g) => !store.findByTitleKey(g.titleKey))
+    if (pending.length) {
+      let done = 0
+      onProgress?.({ phase: 'metadata', total: pending.length, current: 0 })
+      await runPool(pending, METADATA_CONCURRENCY, async (g) => {
+        const online = await fetchOnline(g.animeTitle)
+        if (online && online.title) onlineCache.set(g.titleKey, online)
+        done++
+        onProgress?.({ phase: 'metadata', total: pending.length, current: done })
+      })
+    }
   }
 
   // 合并写入
@@ -132,10 +199,17 @@ async function scanLibrary(store, folders, settings) {
       // 新建番剧
       const id = 'anime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
       let info = offlineDefaults(g.animeTitle, g.season, g.episodes.length)
-      if (settings && settings.autoDownload) {
-        const online = await fetchOnline(g.animeTitle)
-        if (online && online.title) info = { ...info, ...online }
+      // N6：本地 NFO 信息优先（preferLocalInfo 开启时）
+      let localInfo = null
+      if (settings && settings.preferLocalInfo) localInfo = readLocalInfo(g.path)
+      if (localInfo) info = { ...info, ...localInfo }
+      // 在线元数据补充（preferLocalInfo 时本地字段优先，否则在线覆盖默认）
+      const online = onlineCache.get(g.titleKey)
+      if (online && online.title) {
+        info = localInfo ? { ...online, ...info } : { ...info, ...online }
       }
+      // N8：封面下载到本地缓存（失败时回退为原网络 URL）
+      if (info.coverUrl) info.coverUrl = await cacheCover(info.coverUrl)
       const episodes = g.episodes.map((ge, i) => {
         const sub = settings && settings.scanSubtitle ? findSubtitle(ge.file, g.path, dirCache) : ''
         return {
@@ -202,11 +276,11 @@ async function scanLibrary(store, folders, settings) {
 }
 
 // 重建数据库：先备份，清空再扫描，失败自动回滚（B2 修复，避免中途失败导致数据全丢）
-async function rebuildDatabase(store, folders, settings) {
+async function rebuildDatabase(store, folders, settings, onProgress) {
   const backup = JSON.parse(JSON.stringify(store.list()))
   try {
     for (const id of store.list().map((a) => a.id)) store.remove(id)
-    return await scanLibrary(store, folders, settings)
+    return await scanLibrary(store, folders, settings, onProgress)
   } catch (e) {
     for (const a of backup) store.upsert(a)
     throw e

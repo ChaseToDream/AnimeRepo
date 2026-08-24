@@ -49,7 +49,14 @@ function offlineDefaults(title, season, count) {
 }
 
 // 在线获取：AniList GraphQL（免密钥）。失败返回 null。
+// O5/P4-2：增加 10s 超时与内存缓存，避免同一标题在会话内重复请求
+const onlineCache = new Map()
+const FETCH_TIMEOUT = 10000
+
 async function fetchOnline(title) {
+  const cacheKey = (title || '').trim().toLowerCase()
+  if (!cacheKey) return null
+  if (onlineCache.has(cacheKey)) return onlineCache.get(cacheKey)
   const query = `
   query ($search: String) {
     Media(search: $search, type: ANIME) {
@@ -66,11 +73,14 @@ async function fetchOnline(title) {
       season
     }
   }`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
   try {
     const res = await fetch('https://graphql.anilist.co', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ query, variables: { search: title } })
+      body: JSON.stringify({ query, variables: { search: title } }),
+      signal: controller.signal
     })
     if (!res.ok) return null
     const json = await res.json()
@@ -79,7 +89,7 @@ async function fetchOnline(title) {
     const voiceActors = m.characters && m.characters.nodes
       ? m.characters.nodes.map((c) => c.name && c.name.full).filter(Boolean)
       : []
-    return {
+    const result = {
       title: m.title && (m.title.native || m.title.chinese || m.title.romaji || m.title.english) || title,
       englishTitle: (m.title && m.title.romaji) || (m.title && m.title.english) || '',
       romaji: (m.title && m.title.romaji) || '',
@@ -94,8 +104,13 @@ async function fetchOnline(title) {
       coverUrl: m.coverImage && (m.coverImage.extraLarge || m.coverImage.large) || '',
       averageScore: m.averageScore || 0
     }
+    onlineCache.set(cacheKey, result)
+    return result
   } catch (e) {
+    onlineCache.set(cacheKey, null)
     return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 

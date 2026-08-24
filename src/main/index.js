@@ -5,6 +5,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { ensureDataFile, getSettings, flushSaveSync } from './store'
 import { registerIpc } from './ipc'
 import { VIDEO_EXT } from './scanner'
+import { getCoverDir } from './coverCache'
 
 // 自定义协议：anime://local/<base64path> 用于安全加载本地视频
 protocol.registerSchemesAsPrivileged([
@@ -54,7 +55,7 @@ function createWindow() {
     return { action: 'deny' }
   })
 
-  // 自定义协议处理：anime://local/<base64path>
+  // 自定义协议处理：anime://local/<base64path> 视频 / anime://cover/<base64文件名> 封面缓存
   protocol.handle('anime', (request) => {
     const url = new URL(request.url)
     if (url.hostname === 'local') {
@@ -63,6 +64,20 @@ function createWindow() {
         // B7：越权读取防护——仅放行媒体库内的视频文件
         if (!isAllowedMedia(filePath)) return new Response('forbidden', { status: 403 })
         return net.fetch(pathToFileURL(filePath).toString())
+      } catch (e) {
+        return new Response('bad request', { status: 400 })
+      }
+    }
+    if (url.hostname === 'cover') {
+      try {
+        const coverDir = resolve(getCoverDir()).toLowerCase()
+        const filePath = Buffer.from(url.pathname.slice(1), 'base64url').toString('utf-8')
+        const file = resolve(coverDir, filePath)
+        // 校验：解析后必须仍位于封面缓存目录内
+        if (file.toLowerCase().startsWith(coverDir + sep)) {
+          return net.fetch(pathToFileURL(file).toString())
+        }
+        return new Response('forbidden', { status: 403 })
       } catch (e) {
         return new Response('bad request', { status: 400 })
       }

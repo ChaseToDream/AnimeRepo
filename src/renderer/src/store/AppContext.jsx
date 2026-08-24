@@ -8,6 +8,7 @@ export function AppProvider({ children }) {
   const [settings, setSettings] = useState(null)
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
+  const [scanProgress, setScanProgress] = useState(null)
   const [version, setVersion] = useState('1.0.0')
 
   const refresh = useCallback(async () => {
@@ -36,6 +37,11 @@ export function AppProvider({ children }) {
     }
   }, [settings?.accentColor])
 
+  // O4：订阅扫描进度事件（主进程在扫描过程中推送）
+  useEffect(() => {
+    return api.onScanProgress(setScanProgress)
+  }, [])
+
   // 启动时（若开启自动扫描且无数据）执行一次初始扫描
   useEffect(() => {
     async function maybeAutoScan() {
@@ -43,12 +49,14 @@ export function AppProvider({ children }) {
       if (settings?.autoScanOnStartup && library.length === 0) {
         try {
           setScanning(true)
+          setScanProgress(null)
           const res = await api.scanLibrary()
           if (res) setLibrary(res.animes)
         } catch (e) {
           // 忽略
         } finally {
           setScanning(false)
+          setScanProgress(null)
         }
       }
     }
@@ -58,12 +66,14 @@ export function AppProvider({ children }) {
 
   const scan = useCallback(async () => {
     setScanning(true)
+    setScanProgress(null)
     try {
       const res = await api.scanLibrary()
       if (res) setLibrary(res.animes)
       return res
     } finally {
       setScanning(false)
+      setScanProgress(null)
     }
   }, [])
 
@@ -127,6 +137,7 @@ export function AppProvider({ children }) {
     settings,
     loading,
     scanning,
+    scanProgress,
     version,
     refresh,
     scan,

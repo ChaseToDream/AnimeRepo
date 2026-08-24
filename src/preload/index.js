@@ -14,6 +14,12 @@ const api = {
   getLibrary: () => ipcRenderer.invoke('library:get'),
   getAnime: (id) => ipcRenderer.invoke('library:get-one', id),
   scanLibrary: () => ipcRenderer.invoke('library:scan'),
+  // 订阅扫描进度事件，返回取消订阅函数
+  onScanProgress: (cb) => {
+    const listener = (_e, info) => cb(info)
+    ipcRenderer.on('scan:progress', listener)
+    return () => ipcRenderer.removeListener('scan:progress', listener)
+  },
   updateAnime: (id, patch) => ipcRenderer.invoke('anime:update', id, patch),
   removeAnime: (id) => ipcRenderer.invoke('anime:remove', id),
   setProgress: (animeId, epId, seconds, duration) =>
