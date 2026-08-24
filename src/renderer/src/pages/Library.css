@@ -177,3 +177,57 @@
   max-width: 320px;
 }
 .library-empty .ds-btn { margin-top: var(--spacer-8); }
+
+/* ===== N4 多选与批量操作 ===== */
+.library-sort { width: 112px; }
+
+.library-batchbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) var(--spacer-12);
+  margin-bottom: var(--spacer-12);
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-brand);
+  border-radius: var(--radius-6);
+}
+.library-batchbar__count {
+  font-size: var(--body-sm-font-size);
+  color: var(--text-secondary);
+  margin-right: var(--spacer-4);
+  white-space: nowrap;
+}
+.library-batchbar .ds-select { width: auto; }
+.library-batchbar__danger { color: var(--status-error-default); }
+.library-batchbar__danger:hover { color: var(--status-error-default); background: var(--status-error-surface-l1); }
+
+/* 网格卡片选中态 */
+.anime-card.is-selected .anime-card__poster {
+  outline: 2px solid var(--border-brand);
+  outline-offset: -2px;
+}
+.anime-card__select {
+  position: absolute;
+  top: var(--spacer-8);
+  left: var(--spacer-8);
+  z-index: 3;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-neutral-l2);
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--special-black);
+}
+.anime-card__select.is-on {
+  background: var(--bg-brand);
+  border-color: var(--bg-brand);
+}
+/* 列表行选中态 */
+.anime-list__row.is-selected {
+  background: var(--bg-brand-popup);
+  border-color: var(--border-brand);
+}

@@ -69,16 +69,16 @@ function SettingRow({ title, desc, control }) {
   )
 }
 
-function Switch({ checked, onChange }) {
+function Switch({ checked, onChange, disabled }) {
   return (
-    <label className="ds-switch">
-      <input type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} />
+    <label className="ds-switch" style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}>
+      <input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={(e) => !disabled && onChange(e.target.checked)} />
       <span className="ds-switch__thumb" />
     </label>
   )
 }
 
-function Select({ value, options, onChange, width }) {
+function Select({ value, options, onChange, width, disabled }) {
   const display = (o) => (typeof o === 'object' ? o.value : o)
   const label = (o) => (typeof o === 'object' ? o.label : o)
   return (
@@ -86,6 +86,7 @@ function Select({ value, options, onChange, width }) {
       className="ds-select"
       style={width ? { width } : undefined}
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
     >
       {options.map((o) => (
@@ -137,7 +138,7 @@ function EditableTags({ value = [], onChange }) {
 }
 
 export default function Settings() {
-  const { settings, updateSettings, addFolder, removeFolder, refresh, version, api, library } = useApp()
+  const { settings, updateSettings, addFolder, removeFolder, refresh, version, api, library, showToast } = useApp()
   const [activeSection, setActiveSection] = useState('library')
 
   // 加载时与强调色变化时同步 CSS 变量
@@ -155,23 +156,33 @@ export default function Settings() {
     set({ accentColor: color })
   }
 
-  const handleExport = () => api.exportData()
-  const handleImport = () => api.importData()
+  const handleExport = async () => {
+    const ok = await api.exportData()
+    showToast(ok ? '数据已导出' : '导出已取消', ok ? 'success' : 'info')
+  }
+  const handleImport = async () => {
+    const ok = await api.importData()
+    showToast(ok ? '数据已导入' : '导入失败或已取消', ok ? 'success' : 'error')
+    refresh()
+  }
   const handleRebuild = async () => {
     if (confirm('确定要重建数据库吗？这可能需要几分钟时间。')) {
       await api.rebuildDatabase()
       refresh()
+      showToast('数据库已重建', 'success')
     }
   }
   const handleReset = async () => {
     if (confirm('确定要重置所有数据吗？此操作将删除所有番剧与设置，且无法恢复。')) {
       await api.resetData()
       refresh()
+      showToast('所有数据已重置', 'success')
     }
   }
   const handleRestoreDefaults = () => {
     if (confirm('确定要恢复为默认设置吗？当前设置将被覆盖。')) {
       updateSettings({ ...DEFAULTS })
+      showToast('已恢复默认设置', 'success')
     }
   }
 
@@ -363,8 +374,8 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="硬件加速解码"
-                  desc="使用 GPU 硬件加速视频解码"
-                  control={<Switch checked={settings.hardwareDecode} onChange={(v) => set({ hardwareDecode: v })} />}
+                  desc="使用 GPU 硬件加速视频解码（即将支持）"
+                  control={<Switch checked={settings.hardwareDecode} onChange={(v) => set({ hardwareDecode: v })} disabled />}
                 />
                 <SettingRow
                   title="默认播放速度"
@@ -407,13 +418,14 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="字幕字体"
-                  desc="字幕使用的字体"
+                  desc="字幕使用的字体（即将支持）"
                   control={
                     <Select
                       value={settings.subtitleFont}
                       options={['思源黑体', '微软雅黑', '苹方', 'Noto Sans CJK']}
                       onChange={(v) => set({ subtitleFont: v })}
                       width={180}
+                      disabled
                     />
                   }
                 />
@@ -424,7 +436,7 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="字幕底部边距"
-                  desc="字幕距离底部的像素距离"
+                  desc="字幕距离底部的像素距离（即将支持）"
                   control={
                     <div className="ds-input settings-number-input">
                       <input
@@ -432,6 +444,7 @@ export default function Settings() {
                         min="0"
                         max="500"
                         value={settings.subtitleBottomMargin}
+                        disabled
                         onChange={(e) => set({ subtitleBottomMargin: Number(e.target.value) || 0 })}
                       />
                       <span className="settings-number-suffix">px</span>
@@ -440,13 +453,14 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="首选字幕语言"
-                  desc="多字幕轨道时的优先选择"
+                  desc="多字幕轨道时的优先选择（即将支持）"
                   control={
                     <Select
                       value={settings.preferredSubtitleLang}
                       options={['简体中文', '繁体中文', '日文', '英文']}
                       onChange={(v) => set({ preferredSubtitleLang: v })}
                       width={180}
+                      disabled
                     />
                   }
                 />
@@ -488,18 +502,19 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="音频增益"
-                  desc="开启音频增益以提升低音量视频"
-                  control={<Switch checked={settings.audioGain} onChange={(v) => set({ audioGain: v })} />}
+                  desc="开启音频增益以提升低音量视频（即将支持）"
+                  control={<Switch checked={settings.audioGain} onChange={(v) => set({ audioGain: v })} disabled />}
                 />
                 <SettingRow
                   title="输出设备"
-                  desc="音频输出设备"
+                  desc="音频输出设备（即将支持）"
                   control={
                     <Select
                       value={settings.outputDevice}
                       options={['系统默认', 'HDMI', '扬声器', '耳机']}
                       onChange={(v) => set({ outputDevice: v })}
                       width={180}
+                      disabled
                     />
                   }
                 />

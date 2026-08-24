@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import {
@@ -17,6 +17,14 @@ const VIEW_TABS = [
   ['list', '列表', <line key="l1" x1="9" y1="6" x2="21" y2="6" />, <line key="l2" x1="9" y1="12" x2="21" y2="12" />, <line key="l3" x1="9" y1="18" x2="21" y2="18" />, <rect key="l4" x="3" y="4" width="3" height="3" rx="0.5" />, <rect key="l5" x="3" y="10" width="3" height="3" rx="0.5" />, <rect key="l6" x="3" y="16" width="3" height="3" rx="0.5" />]
 ]
 
+// U5：排序选项
+const SORT_OPTIONS = [
+  { key: 'created', label: '添加时间' },
+  { key: 'title', label: '标题' },
+  { key: 'rating', label: '评分' },
+  { key: 'progress', label: '进度' }
+]
+
 function PlayIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
@@ -26,13 +34,22 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning } = useApp()
+  const { library, scan, scanning, batchAnime, showToast } = useApp()
   const navigate = useNavigate()
   const [view, setView] = useState('grid')
+  const [sort, setSort] = useState('created')
+  // N4：多选模式与已选集
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
 
   const q = (filter.query || '').trim().toLowerCase()
   const items = library.filter((a) => {
-    if (filter.status && filter.status !== 'all' && a.status !== filter.status) return false
+    // U5：最近观看筛选（存在 lastWatchedAt 记录）
+    if (filter.status === 'recent') {
+      if (!a.lastWatchedAt) return false
+    } else if (filter.status && filter.status !== 'all' && a.status !== filter.status) {
+      return false
+    }
     if (filter.genre && !(a.genres || []).includes(filter.genre)) return false
     if (q) {
       const title = (a.title || '').toLowerCase()
@@ -41,6 +58,29 @@ export default function Library({ filter, setFilter }) {
     }
     return true
   })
+
+  // U5：排序（最近观看按时间倒序，其余按所选维度）
+  const sortedItems = useMemo(() => {
+    const arr = [...items]
+    if (filter.status === 'recent') {
+      arr.sort((a, b) => new Date(b.lastWatchedAt || 0) - new Date(a.lastWatchedAt || 0))
+      return arr
+    }
+    switch (sort) {
+      case 'title':
+        arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh'))
+        break
+      case 'rating':
+        arr.sort((a, b) => (b.rating || 0) - (a.rating || 0))
+        break
+      case 'progress':
+        arr.sort((a, b) => progressPct(b) - progressPct(a))
+        break
+      default:
+        arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    }
+    return arr
+  }, [items, sort, filter.status])
 
   // 全局统计（基于整个媒体库）
   const stats = {
@@ -54,12 +94,60 @@ export default function Library({ filter, setFilter }) {
   }
 
   const pageTitle =
-    filter.status && filter.status !== 'all' ? STATUS_LABEL[filter.status] || '全部番剧' : '全部番剧'
+    filter.status === 'recent'
+      ? '最近观看'
+      : filter.status && filter.status !== 'all'
+        ? STATUS_LABEL[filter.status] || '全部番剧'
+        : '全部番剧'
 
   const handlePlay = (e, a) => {
     e.stopPropagation()
     const ep = nextEpisode(a)
     if (ep) navigate(`/player/${a.id}/${ep.id}`)
+  }
+
+  // —— N4 多选与批量操作 ——
+  const enterSelection = () => {
+    setSelected(new Set())
+    setSelectionMode(true)
+  }
+  const exitSelection = () => {
+    setSelected(new Set())
+    setSelectionMode(false)
+  }
+  const toggleSelect = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const allSelected = sortedItems.length > 0 && sortedItems.every((a) => selected.has(a.id))
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(sortedItems.map((a) => a.id)))
+  }
+  const runBatch = async (action, payload) => {
+    if (!selected.size) return
+    const count = selected.size
+    await batchAnime(action, [...selected], payload)
+    setSelected(new Set())
+    showToast(`已对 ${count} 部番剧执行批量操作`, 'success')
+  }
+  const handleBatchRemove = async () => {
+    if (!selected.size) return
+    if (confirm(`确定删除选中的 ${selected.size} 部番剧吗？此操作不可恢复。`)) {
+      await runBatch('remove')
+      setSelectionMode(false)
+    }
+  }
+  const handleBatchTags = () => {
+    if (!selected.size) return
+    const tags = (window.prompt('输入标签（用逗号分隔）') || '')
+      .split(/[,，\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (tags.length) runBatch('set-tags', { tags })
   }
 
   return (
@@ -85,11 +173,14 @@ export default function Library({ filter, setFilter }) {
             ))}
           </div>
 
-          <button className="ds-btn ds-btn--secondary ds-btn--sm">
-            <span>按添加时间</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="icon">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+          <select className="ds-select library-sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="排序方式">
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+          </select>
+
+          <button className="ds-btn ds-btn--secondary ds-btn--sm" onClick={selectionMode ? exitSelection : enterSelection}>
+            {selectionMode ? '取消选择' : '多选'}
           </button>
 
           <button
@@ -133,6 +224,34 @@ export default function Library({ filter, setFilter }) {
           </div>
         ) : (
           <>
+            {selectionMode && (
+              <div className="library-batchbar">
+                <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={toggleSelectAll}>
+                  {allSelected ? '取消全选' : '全选'}
+                </button>
+                <span className="library-batchbar__count">已选 {selected.size} 部</span>
+                <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={() => runBatch('mark-watched')}>标记已看</button>
+                <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={() => runBatch('mark-unwatched')}>标记未看</button>
+                <select
+                  className="ds-select"
+                  defaultValue=""
+                  onChange={(e) => { if (e.target.value) runBatch('set-status', { status: e.target.value }) }}
+                  aria-label="批量设置状态"
+                >
+                  <option value="" disabled>设为状态…</option>
+                  <option value="watching">正在观看</option>
+                  <option value="completed">已完成</option>
+                  <option value="plan">想看</option>
+                  <option value="onhold">搁置</option>
+                </select>
+                <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={() => runBatch('set-favorite', { favorite: true })}>收藏</button>
+                <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={() => runBatch('set-favorite', { favorite: false })}>取消收藏</button>
+                <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={handleBatchTags}>标签…</button>
+                <button className="ds-btn ds-btn--sm library-batchbar__danger" onClick={handleBatchRemove}>删除</button>
+                <button className="ds-btn ds-btn--sm ds-btn--tertiary" onClick={exitSelection}>退出</button>
+              </div>
+            )}
+
             <div className="library__stats">
               <div className="ds-statcard">
                 <span className="ds-statcard__label">
@@ -176,8 +295,19 @@ export default function Library({ filter, setFilter }) {
 
             {view === 'grid' ? (
               <div className="anime-grid">
-                {items.map((a) => (
-                  <article className="anime-card" key={a.id} onClick={() => navigate(`/anime/${a.id}`)}>
+                {sortedItems.map((a) => (
+                  <article
+                    className={'anime-card' + (selected.has(a.id) ? ' is-selected' : '')}
+                    key={a.id}
+                    onClick={() => (selectionMode ? toggleSelect(a.id) : navigate(`/anime/${a.id}`))}
+                  >
+                    {selectionMode && (
+                      <div className={'anime-card__select' + (selected.has(a.id) ? ' is-on' : '')}>
+                        {selected.has(a.id) ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                        ) : null}
+                      </div>
+                    )}
                     <div className="anime-card__poster">
                       <Poster anime={a} imgClassName="anime-card__poster-img" bgClassName="anime-card__poster-bg" />
                       <div className="anime-card__tags">
@@ -233,8 +363,12 @@ export default function Library({ filter, setFilter }) {
                     <span>进度</span>
                     <span>评分</span>
                   </div>
-                  {items.map((a, i) => (
-                    <div className="anime-list__row" key={a.id} onClick={() => navigate(`/anime/${a.id}`)}>
+                  {sortedItems.map((a, i) => (
+                    <div
+                      className={'anime-list__row' + (selected.has(a.id) ? ' is-selected' : '')}
+                      key={a.id}
+                      onClick={() => (selectionMode ? toggleSelect(a.id) : navigate(`/anime/${a.id}`))}
+                    >
                       <span className="anime-list__index">{i + 1}</span>
                       <div className="anime-list__thumb">
                         <Poster anime={a} as="span" />

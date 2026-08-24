@@ -65,14 +65,16 @@ function VideoFilter({ brightness, contrast, saturation, hue }) {
 }
 
 // 开关（ds-switch 可变体）
-function Switch({ on, onChange, label }) {
+function Switch({ on, onChange, label, disabled }) {
   return (
     <button
       className={`setting-switch${on ? ' is-on' : ''}`}
       role="switch"
       aria-checked={on}
       aria-label={label}
-      onClick={() => onChange(!on)}
+      disabled={disabled}
+      style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+      onClick={() => !disabled && onChange(!on)}
     >
       <span className="setting-switch__thumb" />
     </button>
@@ -624,13 +626,16 @@ export default function Player() {
                           value={quality}
                           onChange={(e) => { setQuality(e.target.value); persist({ quality: e.target.value }) }}
                           aria-label="清晰度"
+                          disabled
                         >
                           {QUALITIES.map((q) => <option key={q} value={q}>{q}</option>)}
                         </select>
+                        <span className="setting-row__soon">即将支持</span>
                       </div>
                       <div className="setting-row">
                         <span className="setting-row__label">硬件加速</span>
-                        <Switch label="硬件加速" on={hardwareAccel} onChange={(v) => { setHardwareAccel(v); persist({ hardwareDecode: v }) }} />
+                        <Switch label="硬件加速" on={hardwareAccel} onChange={(v) => { setHardwareAccel(v); persist({ hardwareDecode: v }) }} disabled />
+                        <span className="setting-row__soon">即将支持</span>
                       </div>
                     </div>
                   </>
@@ -644,14 +649,16 @@ export default function Player() {
                       <div className="setting-row">
                         <span className="setting-row__label">音量增益</span>
                         <input type="range" className="setting-row__slider" min="0" max="200" step="1"
-                          value={audioGain} onChange={(e) => setAudioGain(Number(e.target.value))} aria-label="音量增益" />
+                          value={audioGain} onChange={(e) => setAudioGain(Number(e.target.value))} aria-label="音量增益" disabled />
                         <span className="setting-row__value">{audioGain}%</span>
+                        <span className="setting-row__soon">即将支持</span>
                       </div>
                       <div className="setting-row">
                         <span className="setting-row__label">音频延迟</span>
                         <input type="range" className="setting-row__slider" min="-500" max="500" step="10"
-                          value={audioDelay} onChange={(e) => setAudioDelay(Number(e.target.value))} aria-label="音频延迟" />
+                          value={audioDelay} onChange={(e) => setAudioDelay(Number(e.target.value))} aria-label="音频延迟" disabled />
                         <span className="setting-row__value">{audioDelay}ms</span>
+                        <span className="setting-row__soon">即将支持</span>
                       </div>
                     </div>
                   </>
@@ -674,10 +681,12 @@ export default function Player() {
                       <div className="setting-row">
                         <span className="setting-row__label">字幕字体</span>
                         <span className="setting-select">思源黑体</span>
+                        <span className="setting-row__soon">即将支持</span>
                       </div>
                       <div className="setting-row">
                         <span className="setting-row__label">字幕颜色</span>
                         <span className="setting-select">白色</span>
+                        <span className="setting-row__soon">即将支持</span>
                       </div>
                     </div>
                   </>

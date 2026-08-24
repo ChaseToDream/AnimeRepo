@@ -22,6 +22,9 @@ const api = {
   },
   updateAnime: (id, patch) => ipcRenderer.invoke('anime:update', id, patch),
   removeAnime: (id) => ipcRenderer.invoke('anime:remove', id),
+  batchAnime: (op) => ipcRenderer.invoke('anime:batch', op),
+  mergeAnime: (fromId, toId) => ipcRenderer.invoke('anime:merge', fromId, toId),
+  splitAnime: (fromId, epIds, newTitle) => ipcRenderer.invoke('anime:split', fromId, epIds, newTitle),
   setProgress: (animeId, epId, seconds, duration) =>
     ipcRenderer.invoke('anime:set-progress', animeId, epId, seconds, duration),
   setWatched: (animeId, epId, watched) => ipcRenderer.invoke('anime:set-watched', animeId, epId, watched),

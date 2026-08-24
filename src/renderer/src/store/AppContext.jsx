@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import api from '../lib/api'
+import Toasts from '../components/Toasts'
 
 const AppContext = createContext(null)
 
@@ -10,6 +11,19 @@ export function AppProvider({ children }) {
   const [scanning, setScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState(null)
   const [version, setVersion] = useState('1.0.0')
+  // U2：全局 Toast
+  const [toasts, setToasts] = useState([])
+  const showToast = useCallback((message, type = 'info', duration = 2500) => {
+    const id = Date.now() + Math.random().toString(36).slice(2, 6)
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, duration)
+    return id
+  }, [])
+  const dismissToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
 
   const refresh = useCallback(async () => {
     try {
@@ -69,13 +83,19 @@ export function AppProvider({ children }) {
     setScanProgress(null)
     try {
       const res = await api.scanLibrary()
-      if (res) setLibrary(res.animes)
+      if (res) {
+        setLibrary(res.animes)
+        showToast(
+          `扫描完成：新增 ${res.added || 0} 部，更新 ${res.updated || 0} 部${res.removed ? `，移除 ${res.removed} 部` : ''}`,
+          'success'
+        )
+      }
       return res
     } finally {
       setScanning(false)
       setScanProgress(null)
     }
-  }, [])
+  }, [showToast])
 
   const getAnime = useCallback((id) => library.find((a) => a.id === id) || null, [library])
 
@@ -93,6 +113,26 @@ export function AppProvider({ children }) {
   const removeAnime = useCallback(async (id) => {
     await api.removeAnime(id)
     setLibrary((prev) => prev.filter((a) => a.id !== id))
+  }, [])
+
+  // N4：批量操作（返回更新后的库）
+  const batchAnime = useCallback(async (action, ids, payload) => {
+    const updated = await api.batchAnime({ action, ids, payload })
+    if (updated) setLibrary(updated)
+    return updated
+  }, [])
+
+  // N3：合并 / 拆分番剧
+  const mergeAnime = useCallback(async (fromId, toId) => {
+    const updated = await api.mergeAnime(fromId, toId)
+    if (updated) setLibrary(updated)
+    return updated
+  }, [])
+
+  const splitAnime = useCallback(async (fromId, epIds, newTitle) => {
+    const updated = await api.splitAnime(fromId, epIds, newTitle)
+    if (updated) setLibrary(updated)
+    return updated
   }, [])
 
   const setProgress = useCallback(
@@ -144,15 +184,25 @@ export function AppProvider({ children }) {
     getAnime,
     updateAnime,
     removeAnime,
+    batchAnime,
+    mergeAnime,
+    splitAnime,
     setProgress,
     setWatched,
     updateSettings,
     addFolder,
     removeFolder,
+    showToast,
+    dismissToast,
     api
   }
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+      <Toasts toasts={toasts} dismiss={dismissToast} />
+    </AppContext.Provider>
+  )
 }
 
 export function useApp() {

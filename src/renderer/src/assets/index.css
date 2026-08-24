@@ -50,3 +50,38 @@ select {
   font-family: inherit;
   font-size: inherit;
 }
+
+/* ===== U2 全局 Toast ===== */
+.ds-toast-container {
+  position: fixed;
+  top: var(--spacer-16);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacer-8);
+  pointer-events: none;
+}
+.ds-toast {
+  pointer-events: auto;
+  max-width: 420px;
+  padding: var(--spacer-8) var(--spacer-16);
+  border-radius: var(--radius-6);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  color: var(--text-default);
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-neutral-l1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  animation: ds-toast-in 0.18s ease-out;
+}
+.ds-toast--success { border-color: var(--status-success-default); color: var(--status-success-default); }
+.ds-toast--error { border-color: var(--status-error-default); color: var(--status-error-default); }
+.ds-toast--warning { border-color: var(--status-warning-default); color: var(--status-warning-default); }
+@keyframes ds-toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -87,7 +87,14 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
             </svg>
             <span className="ds-navlist__label">统计面板</span>
           </button>
-          <button className="ds-navlist__item" onClick={() => navigate('/')}>
+          <button
+            className={'ds-navlist__item ' + (activeFilter === 'recent' && section === 'library' ? 'is-active' : '')}
+            onClick={() => {
+              setSection('library')
+              navigate('/')
+              onFilterChange?.('recent')
+            }}
+          >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
               <polygon points="12 2 2 7 12 12 22 7 12 2" /><path d="M2 17 12 22l10-5" /><path d="M2 12l10 5 10-5" />
             </svg>

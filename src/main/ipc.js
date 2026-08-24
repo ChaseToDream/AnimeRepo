@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import * as store from './store'
 import { scanLibrary, rebuildDatabase } from './scanner'
+import { titleKey } from './parser'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
 
@@ -25,6 +26,108 @@ export function registerIpc() {
   })
   ipcMain.handle('anime:update', (_e, id, patch) => store.updateAnime(id, patch))
   ipcMain.handle('anime:remove', (_e, id) => store.remove(id))
+  // —— 批量操作（N4）——
+  ipcMain.handle('anime:batch', (_e, { action, ids, payload }) => {
+    const targets = (ids || []).map((id) => store.get(id)).filter(Boolean)
+    if (!targets.length) return store.list()
+    switch (action) {
+      case 'remove':
+        for (const a of targets) store.remove(a.id)
+        break
+      case 'set-status': {
+        const status = payload && payload.status
+        if (status) for (const a of targets) store.updateAnime(a.id, { status })
+        break
+      }
+      case 'set-favorite': {
+        const fav = Boolean(payload && payload.favorite)
+        for (const a of targets) store.updateAnime(a.id, { isFavorite: fav })
+        break
+      }
+      case 'mark-watched':
+      case 'mark-unwatched': {
+        const watched = action === 'mark-watched'
+        for (const a of targets) {
+          for (const ep of a.episodes || []) store.setEpisodeWatched(a.id, ep.id, watched)
+        }
+        break
+      }
+      case 'set-tags': {
+        const tags = (payload && payload.tags) || []
+        for (const a of targets) store.updateAnime(a.id, { tags })
+        break
+      }
+      default:
+        return store.list()
+    }
+    return store.list()
+  })
+  // —— 合并 / 拆分番剧（N3）——
+  // 合并：把 from 的剧集追加到 to（集数冲突自动顺延），随后删除 from
+  ipcMain.handle('anime:merge', (_e, fromId, toId) => {
+    const from = store.get(fromId)
+    const to = store.get(toId)
+    if (!from || !to || fromId === toId) return store.list()
+    const used = new Set((to.episodes || []).map((e) => e.number))
+    let maxNum = Math.max(0, ...(to.episodes || []).map((e) => e.number))
+    const moved = (from.episodes || []).map((ep) => {
+      let number = ep.number
+      while (used.has(number)) {
+        maxNum += 1
+        number = maxNum
+      }
+      used.add(number)
+      return { ...ep, id: `${to.id}-ep${number}`, animeId: to.id, number }
+    })
+    store.updateAnime(to.id, {
+      episodes: [...(to.episodes || []), ...moved],
+      aired: (to.episodes || []).length + moved.length
+    })
+    store.remove(fromId)
+    return store.list()
+  })
+  // 拆分：把指定剧集从 from 移出，创建为新番剧
+  ipcMain.handle('anime:split', (_e, fromId, epIds, newTitle) => {
+    const from = store.get(fromId)
+    if (!from || !Array.isArray(epIds) || !epIds.length) return store.list()
+    const idSet = new Set(epIds)
+    const moved = (from.episodes || []).filter((e) => idSet.has(e.id))
+    const kept = (from.episodes || []).filter((e) => !idSet.has(e.id))
+    if (!moved.length) return store.list()
+    const id = 'anime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
+    const title = (newTitle && newTitle.trim()) || from.title
+    const episodes = moved.map((ep) => ({ ...ep, id: `${id}-ep${ep.number}`, animeId: id }))
+    store.upsert({
+      id,
+      titleKey: titleKey(title),
+      title,
+      englishTitle: '',
+      romaji: '',
+      description: '',
+      genres: from.genres || [],
+      tags: [],
+      rating: 0,
+      status: 'plan',
+      year: from.year,
+      airDate: '',
+      studio: '',
+      voiceActors: [],
+      coverUrl: '',
+      coverGradient: from.coverGradient || '#1a1a2e',
+      seasons: from.seasons || [1],
+      aired: episodes.length,
+      episodes,
+      path: from.path,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+    if (kept.length) {
+      store.updateAnime(from.id, { episodes: kept, aired: kept.length })
+    } else {
+      store.remove(fromId)
+    }
+    return store.list()
+  })
   ipcMain.handle('anime:set-progress', (_e, animeId, epId, seconds, duration) =>
     store.setEpisodeProgress(animeId, epId, seconds, duration)
   )

@@ -481,6 +481,42 @@
 }
 .edit-field input[type='number']:focus { outline: none; border-color: var(--accent-color); }
 
+/* ===== N3 管理弹窗（合并 / 拆分） ===== */
+.manage-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+.manage-row .ds-select,
+.manage-row .ds-input { flex: 1; }
+.edit-field__hint {
+  margin: 0;
+  font-size: var(--body-xs-font-size);
+  line-height: var(--body-xs-line-height);
+  color: var(--text-tertiary);
+}
+.manage-ep-list {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-4);
+  background: var(--bg-overlay-l1);
+}
+.manage-ep-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-6) var(--spacer-8);
+  font-size: var(--body-sm-font-size);
+  color: var(--text-default);
+  cursor: pointer;
+}
+.manage-ep-item + .manage-ep-item { border-top: 1px solid var(--border-neutral-l1); }
+.manage-ep-item:hover { background: var(--bg-overlay-l2); }
+.manage-ep-item input { accent-color: var(--accent-color); cursor: pointer; }
+
 /* ===== 空状态 ===== */
 .detail-empty {
   display: flex;

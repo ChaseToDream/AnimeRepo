@@ -21,7 +21,7 @@ const TABS = [
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { library, getAnime, updateAnime, setWatched } = useApp()
+  const { library, getAnime, updateAnime, setWatched, mergeAnime, splitAnime, showToast } = useApp()
 
   const anime = getAnime(id)
 
@@ -32,6 +32,11 @@ export default function Detail() {
   const [editOpen, setEditOpen] = useState(false)
   const [formDesc, setFormDesc] = useState('')
   const [formRating, setFormRating] = useState('')
+  // N3：管理弹窗（合并 / 拆分）
+  const [manageOpen, setManageOpen] = useState(false)
+  const [mergeTarget, setMergeTarget] = useState('')
+  const [splitEpIds, setSplitEpIds] = useState(() => new Set())
+  const [splitTitle, setSplitTitle] = useState('')
 
   // 切番剧时重置收藏与季选择
   useEffect(() => {
@@ -89,6 +94,39 @@ export default function Detail() {
       rating: Number(formRating) || 0
     })
     setEditOpen(false)
+  }
+
+  // —— N3 合并 / 拆分 ——
+  const openManage = () => {
+    setMergeTarget('')
+    setSplitEpIds(new Set())
+    setSplitTitle('')
+    setManageOpen(true)
+  }
+  const toggleSplitEp = (epId) => {
+    setSplitEpIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(epId)) next.delete(epId)
+      else next.add(epId)
+      return next
+    })
+  }
+  const handleMerge = async () => {
+    if (!mergeTarget) return
+    const target = library.find((x) => x.id === mergeTarget)
+    if (confirm(`将「${anime.title}」的 ${anime.episodes?.length || 0} 集合并到「${target?.title}」，并删除当前条目？`)) {
+      await mergeAnime(anime.id, mergeTarget)
+      setManageOpen(false)
+      showToast('合并完成', 'success')
+      navigate('/')
+    }
+  }
+  const handleSplit = async () => {
+    if (!splitEpIds.size) return
+    await splitAnime(anime.id, [...splitEpIds], splitTitle)
+    setManageOpen(false)
+    showToast(`已拆出 ${splitEpIds.size} 集为新番剧`, 'success')
+    navigate('/')
   }
 
   // 相关推荐：同流派的其他番剧
@@ -175,6 +213,9 @@ export default function Detail() {
                 </button>
                 <button className="ds-btn ds-btn--lg ds-btn--secondary hero__action-edit" onClick={openEdit}>
                   编辑信息
+                </button>
+                <button className="ds-btn ds-btn--lg ds-btn--secondary hero__action-manage" onClick={openManage}>
+                  管理
                 </button>
               </div>
             </div>
@@ -446,6 +487,79 @@ export default function Detail() {
             <div className="ds-dialog__foot">
               <button className="ds-btn ds-btn--secondary" onClick={() => setEditOpen(false)}>取消</button>
               <button className="ds-btn ds-btn--brand" onClick={saveEdit}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 管理弹窗（N3：合并 / 拆分） ===== */}
+      {manageOpen && (
+        <div className="ds-modal-backdrop" onClick={() => setManageOpen(false)}>
+          <div className="ds-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="ds-dialog__head">
+              <span className="ds-dialog__title">管理番剧</span>
+              <button className="ds-dialog__close" aria-label="关闭" onClick={() => setManageOpen(false)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="ds-dialog__body">
+              <div className="edit-form">
+                <div className="edit-field">
+                  <label className="edit-field__label">合并到其他番剧</label>
+                  <div className="manage-row">
+                    <select
+                      className="ds-select"
+                      value={mergeTarget}
+                      onChange={(e) => setMergeTarget(e.target.value)}
+                      aria-label="选择目标番剧"
+                    >
+                      <option value="">选择目标番剧…</option>
+                      {library
+                        .filter((x) => x.id !== anime.id)
+                        .map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.title}（{x.episodes?.length || 0} 集）
+                          </option>
+                        ))}
+                    </select>
+                    <button className="ds-btn ds-btn--brand ds-btn--sm" disabled={!mergeTarget} onClick={handleMerge}>
+                      合并
+                    </button>
+                  </div>
+                  <p className="edit-field__hint">合并后当前条目将被删除，观看进度会保留并转移。</p>
+                </div>
+
+                <div className="edit-field">
+                  <label className="edit-field__label">拆出剧集为新番剧</label>
+                  <div className="manage-ep-list">
+                    {episodes.map((ep) => (
+                      <label key={ep.id} className="manage-ep-item">
+                        <input
+                          type="checkbox"
+                          checked={splitEpIds.has(ep.id)}
+                          onChange={() => toggleSplitEp(ep.id)}
+                        />
+                        <span>EP{ep.number} {ep.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="manage-row">
+                    <input
+                      type="text"
+                      className="ds-input"
+                      value={splitTitle}
+                      placeholder="新番剧标题（可选）"
+                      onChange={(e) => setSplitTitle(e.target.value)}
+                    />
+                    <button className="ds-btn ds-btn--brand ds-btn--sm" disabled={!splitEpIds.size} onClick={handleSplit}>
+                      拆出
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="ds-dialog__foot">
+              <button className="ds-btn ds-btn--secondary" onClick={() => setManageOpen(false)}>关闭</button>
             </div>
           </div>
         </div>
