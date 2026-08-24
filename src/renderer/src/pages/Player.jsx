@@ -84,7 +84,7 @@ function Switch({ on, onChange, label, disabled }) {
 export default function Player() {
   const { animeId, epId } = useParams()
   const navigate = useNavigate()
-  const { library, getAnime, setProgress, setProgressSilent, updateSettings, updateAnime, settings } = useApp()
+  const { library, getAnime, setProgress, setProgressSilent, updateSettings, updateAnime, setWatched, settings } = useApp()
 
   const anime = getAnime(animeId)
   const ep = anime?.episodes?.find((e) => e.id === epId)

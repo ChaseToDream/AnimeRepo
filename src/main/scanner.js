@@ -322,9 +322,31 @@ async function scanLibrary(store, folders, settings, onProgress) {
   if (folders && folders.length) {
     // B2：被忽略/回收站处理的未匹配文件不再视为有效，对应历史条目将被清理
     const existingFiles = new Set(files.filter((f) => !ignoredFiles.has(f)))
+    // P0 修复：区分「文件夹已被移除」与「扫描范围收缩」——
+    // 文件仍属于当前媒体库文件夹、但本次未扫到（如缩小扫描深度/移除某视频格式）时，
+    // 需结合磁盘存在性校验，避免误删仍在磁盘上的条目及其观看进度/评分/标签
+    const folderRoots = folders.map((f) => path.resolve(f).toLowerCase())
+    const underCurrentFolders = (filePath) => {
+      if (!filePath) return false
+      const p = path.resolve(filePath).toLowerCase()
+      return folderRoots.some((root) => p === root || p.startsWith(root + path.sep))
+    }
     const snapshot = store.list().slice()
     for (const a of snapshot) {
-      const alive = (a.episodes || []).filter((e) => e.filePath && existingFiles.has(e.filePath))
+      const alive = (a.episodes || []).filter((e) => {
+        if (!e.filePath) return false
+        if (existingFiles.has(e.filePath)) return true
+        // 属于当前媒体库但未在本次扫描范围内：磁盘上仍存在则保留，避免误删
+        if (underCurrentFolders(e.filePath)) {
+          try {
+            return fs.existsSync(e.filePath)
+          } catch {
+            return false
+          }
+        }
+        // 媒体库文件夹已被移除或文件已不在任何当前媒体库内：视为失效清理
+        return false
+      })
       if (alive.length === 0) {
         store.remove(a.id)
         removed++
