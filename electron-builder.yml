@@ -1,0 +1,16 @@
+appId: com.animerepo.app
+productName: AnimeRepo
+directories:
+  buildResources: build
+files:
+  - out/**
+  - '!**/.vscode/*'
+  - '!src/*'
+win:
+  target:
+    - dir
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
