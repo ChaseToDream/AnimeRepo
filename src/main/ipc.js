@@ -66,25 +66,30 @@ export function registerIpc() {
   })
   // —— 合并 / 拆分番剧（N3）——
   // 合并：把 from 的剧集追加到 to（集数冲突自动顺延），随后删除 from
+  // B6：nextNum 单调递增分配冲突号，避免非连续编号下 while 循环导致编号漂移；
+  // aired 取最终合并后的集数组长度（而非前值之和）。
   ipcMain.handle('anime:merge', (_e, fromId, toId) => {
     const from = store.get(fromId)
     const to = store.get(toId)
     if (!from || !to || fromId === toId) return store.list()
-    const used = new Set((to.episodes || []).map((e) => e.number))
-    let maxNum = Math.max(0, ...(to.episodes || []).map((e) => e.number))
-    const moved = (from.episodes || []).map((ep) => {
-      let number = ep.number
-      while (used.has(number)) {
-        maxNum += 1
-        number = maxNum
-      }
-      used.add(number)
-      return { ...ep, id: `${to.id}-ep${number}`, animeId: to.id, number }
-    })
-    store.updateAnime(to.id, {
-      episodes: [...(to.episodes || []), ...moved],
-      aired: (to.episodes || []).length + moved.length
-    })
+    const base = to.episodes || []
+    const used = new Set(base.map((e) => e.number))
+    let nextNum = Math.max(0, ...base.map((e) => e.number))
+    const moved = (from.episodes || [])
+      .slice()
+      .sort((a, b) => a.number - b.number)
+      .map((ep) => {
+        let number = ep.number
+        if (used.has(number)) {
+          // 只对冲突号分配递增新号，已存在的原号保持不变
+          nextNum += 1
+          number = nextNum
+        }
+        used.add(number)
+        return { ...ep, id: `${to.id}-ep${number}`, animeId: to.id, number }
+      })
+    const episodes = [...base, ...moved]
+    store.updateAnime(to.id, { episodes, aired: episodes.length })
     store.remove(fromId)
     return store.list()
   })

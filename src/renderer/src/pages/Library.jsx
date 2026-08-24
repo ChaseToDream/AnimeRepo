@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useDeferredValue } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import {
@@ -48,22 +48,26 @@ export default function Library({ filter, setFilter }) {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
 
-  const q = (filter.query || '').trim().toLowerCase()
-  const items = library.filter((a) => {
-    // U5：最近观看筛选（存在 lastWatchedAt 记录）
-    if (filter.status === 'recent') {
-      if (!a.lastWatchedAt) return false
-    } else if (filter.status && filter.status !== 'all' && a.status !== filter.status) {
-      return false
-    }
-    if (filter.genre && !(a.genres || []).includes(filter.genre)) return false
-    if (q) {
-      const title = (a.title || '').toLowerCase()
-      const desc = (a.description || '').toLowerCase()
-      if (!title.includes(q) && !desc.includes(q)) return false
-    }
-    return true
-  })
+  // P3：搜索词延迟更新，避免每次输入触发全库过滤重算
+  const deferredQuery = useDeferredValue(filter.query || '')
+  const q = deferredQuery.trim().toLowerCase()
+  const items = useMemo(() => {
+    return library.filter((a) => {
+      // U5：最近观看筛选（存在 lastWatchedAt 记录）
+      if (filter.status === 'recent') {
+        if (!a.lastWatchedAt) return false
+      } else if (filter.status && filter.status !== 'all' && a.status !== filter.status) {
+        return false
+      }
+      if (filter.genre && !(a.genres || []).includes(filter.genre)) return false
+      if (q) {
+        const title = (a.title || '').toLowerCase()
+        const desc = (a.description || '').toLowerCase()
+        if (!title.includes(q) && !desc.includes(q)) return false
+      }
+      return true
+    })
+  }, [library, filter.status, filter.genre, q])
 
   // U5：排序（最近观看按时间倒序，其余按所选维度）
   const sortedItems = useMemo(() => {

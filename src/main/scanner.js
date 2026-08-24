@@ -87,8 +87,15 @@ async function walkFiles(root, options, onFile) {
 }
 
 // N6：读取本地 .nfo 信息（Kodi/Emby 风格，正则解析，不引入 XML 依赖）
-function readLocalInfo(folder) {
+// B8：按 settings.infoFormats 决定是否启用；当前仅支持 .nfo 文本解析，
+// 其他扩展名（json/xml）因格式异构暂不解析，未含 nfo 则禁用本地信息。
+function readLocalInfo(folder, infoFormats) {
   if (!folder) return null
+  const exts = (Array.isArray(infoFormats) && infoFormats.length
+    ? infoFormats
+    : ['nfo'])
+    .map((e) => String(e).replace(/^\./, '').toLowerCase())
+  if (!exts.includes('nfo')) return null
   try {
     let nfo = ''
     for (const name of fs.readdirSync(folder)) {
@@ -254,7 +261,7 @@ async function scanLibrary(store, folders, settings, onProgress) {
       let info = offlineDefaults(g.animeTitle, g.season, g.episodes.length)
       // N6：本地 NFO 信息优先（preferLocalInfo 开启时）
       let localInfo = null
-      if (settings && settings.preferLocalInfo) localInfo = readLocalInfo(g.path)
+      if (settings && settings.preferLocalInfo) localInfo = readLocalInfo(g.path, settings.infoFormats)
       if (localInfo) info = { ...info, ...localInfo }
       // 在线元数据补充（preferLocalInfo 时本地字段优先，否则在线覆盖默认）
       const online = onlineCache.get(g.titleKey)

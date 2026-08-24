@@ -128,9 +128,18 @@ function remove(id) {
 function updateAnime(id, patch) {
   const idx = state.animes.findIndex((a) => a.id === id)
   if (idx < 0) return null
-  state.animes[idx] = { ...state.animes[idx], ...patch, updatedAt: new Date().toISOString() }
+  const next = { ...state.animes[idx], ...patch, updatedAt: new Date().toISOString() }
+  // B7：当仅更新 episodes（如扫描合并剧集）且未显式指定状态时，
+  // 按观看进度收敛 status；显式传 status（批量/编辑）不被覆盖。
+  if (
+    Object.prototype.hasOwnProperty.call(patch, 'episodes') &&
+    !Object.prototype.hasOwnProperty.call(patch, 'status')
+  ) {
+    recalcStatus(next)
+  }
+  state.animes[idx] = next
   save()
-  return state.animes[idx]
+  return next
 }
 
 function findByTitleKey(titleKey) {

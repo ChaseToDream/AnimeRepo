@@ -15,6 +15,11 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
   const total = library.length
 
   const genreSet = [...new Set(library.flatMap((a) => a.genres || []))]
+  // O2：各流派计数（用于分类徽章）
+  const genreCounts = library.reduce((m, a) => {
+    for (const g of a.genres || []) m[g] = (m[g] || 0) + 1
+    return m
+  }, {})
 
   const navigateTo = (route) => navigate(route)
 
@@ -120,8 +125,9 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
                 }}
               >
                 {g}
-              </span>
-            ))}
+              <span className="ds-navlist__badge">{genreCounts[g] || 0}</span>
+            </span>
+          ))}
             {genreSet.length === 0 && <span className="text-tertiary" style={{ fontSize: 10 }}>{t('nav.emptyGenres')}</span>}
           </div>
         </div>
