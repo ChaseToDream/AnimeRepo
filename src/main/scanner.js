@@ -1,6 +1,7 @@
 // 媒体扫描服务：递归扫描库文件夹，识别视频文件并解析出番剧/剧集
 import fs from 'fs'
 import path from 'path'
+import { shell } from 'electron'
 import { parseFilename, titleKey } from './parser'
 import { offlineDefaults, fetchOnline } from './metadata'
 import { cacheCover } from './coverCache'
@@ -127,10 +128,27 @@ async function scanLibrary(store, folders, settings, onProgress) {
   const groups = new Map()
   // 字幕扫描：同目录 readdir 结果缓存，避免对同一目录重复枚举
   const dirCache = new Map()
+  // B2 修复：无法识别的视频按 unmatchedAction 处理（默认「保留在未分类中」）
+  const unmatchedAction = (settings && settings.unmatchedAction) || '保留在未分类中'
+  // 被忽略/回收站处理的文件，供末尾清理段移除其历史残留条目
+  const ignoredFiles = new Set()
   for (const file of files) {
     const folderName = path.basename(path.dirname(file))
     const parsed = parseFilename(path.basename(file), folderName)
-    if (!parsed.number && parsed.number !== 0) continue
+    // 解析失败（无有效集数）的文件进入未匹配处理
+    if (!parsed.number) {
+      if (unmatchedAction === '自动忽略') {
+        ignoredFiles.add(file)
+        continue
+      }
+      if (unmatchedAction === '移至回收站') {
+        // 异步移入系统回收站，失败静默忽略，不阻塞扫描
+        ignoredFiles.add(file)
+        shell.trashItem(file).catch(() => {})
+        continue
+      }
+      // '保留在未分类中'：以文件名兜底并入「未知番剧」分组
+    }
     const key = `${parsed.titleKey}|${parsed.season}`
     if (!groups.has(key)) {
       groups.set(key, {
@@ -261,7 +279,8 @@ async function scanLibrary(store, folders, settings, onProgress) {
   // 仅当存在有效媒体库文件夹时才执行，避免空库扫描误清空数据
   let removed = 0
   if (folders && folders.length) {
-    const existingFiles = new Set(files)
+    // B2：被忽略/回收站处理的未匹配文件不再视为有效，对应历史条目将被清理
+    const existingFiles = new Set(files.filter((f) => !ignoredFiles.has(f)))
     const snapshot = store.list().slice()
     for (const a of snapshot) {
       const alive = (a.episodes || []).filter((e) => e.filePath && existingFiles.has(e.filePath))
@@ -277,13 +296,16 @@ async function scanLibrary(store, folders, settings, onProgress) {
   return { ...result, removed, animes: store.list() }
 }
 
-// 重建数据库：先备份，清空再扫描，失败自动回滚（B2 修复，避免中途失败导致数据全丢）
+// 重建数据库：采用全量重扫实现「无损重建」，失败自动回滚
+// B1 修复：原先「清空再重扫」会丢失所有观看进度/评分/收藏/标签。
+// scanLibrary 的合并分支会保留已有剧集的 watched/progress，末尾清理逻辑
+// 会移除磁盘上已不存在的失效条目，因此直接重扫即等价于无损重建。
 async function rebuildDatabase(store, folders, settings, onProgress) {
   const backup = JSON.parse(JSON.stringify(store.list()))
   try {
-    for (const id of store.list().map((a) => a.id)) store.remove(id)
     return await scanLibrary(store, folders, settings, onProgress)
   } catch (e) {
+    // 扫描中途失败时回滚，避免部分写入导致数据损坏
     for (const a of backup) store.upsert(a)
     throw e
   }
