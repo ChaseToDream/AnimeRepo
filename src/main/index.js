@@ -13,17 +13,30 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'anime', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ])
 
+// 正则转义：构建扩展名白名单时防止用户输入的正则元字符破坏匹配
+function escapeRe(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 // B7 安全校验：仅允许读取「媒体库文件夹内」且为受支持扩展名的视频文件
+// B4：扩展名白名单以 settings.videoFormats 为准（与扫描器保持一致），无配置时回退内置 VIDEO_EXT
 function isAllowedMedia(filePath) {
   try {
-    if (!filePath || !VIDEO_EXT.test(filePath)) return false
+    if (!filePath) return false
     const folders = getSettings().libraryFolders || []
     if (!folders.length) return false
     const resolved = resolve(filePath).toLowerCase()
-    return folders.some((f) => {
+    const inFolder = folders.some((f) => {
       const base = resolve(f).toLowerCase()
       return resolved === base || resolved.startsWith(base + sep)
     })
+    if (!inFolder) return false
+    const formats = (getSettings().videoFormats || []).filter(Boolean)
+    if (formats.length) {
+      const re = new RegExp(`\\.(${formats.map(escapeRe).join('|')})$`, 'i')
+      return re.test(filePath)
+    }
+    return VIDEO_EXT.test(filePath)
   } catch (e) {
     return false
   }

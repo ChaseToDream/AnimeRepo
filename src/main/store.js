@@ -197,6 +197,28 @@ function setEpisodeWatched(animeId, epId, watched) {
   return anime
 }
 
+// B5：批量标记多个剧集的已看状态——只触发一次 recalcStatus 与一次落盘，
+// 避免批量操作 N 集时 N 次全量写盘 + N 次状态重算
+function setEpisodesWatchedBulk(animeId, epIds, watched) {
+  const anime = get(animeId)
+  if (!anime) return null
+  const idSet = new Set(epIds || [])
+  if (!idSet.size) return anime
+  for (const ep of anime.episodes || []) {
+    if (!idSet.has(ep.id)) continue
+    ep.watched = watched
+    if (watched) {
+      ep.progress = ep.duration || 0
+    } else if (ep.duration > 0 && ep.progress >= ep.duration) {
+      ep.progress = 0
+    }
+  }
+  anime.updatedAt = new Date().toISOString()
+  recalcStatus(anime)
+  save()
+  return anime
+}
+
 // —— 设置 ——
 function getSettings() {
   return { ...state.settings }
@@ -244,6 +266,7 @@ export {
   findByTitleKey,
   setEpisodeProgress,
   setEpisodeWatched,
+  setEpisodesWatchedBulk,
   getSettings,
   updateSettings,
   dataPath,

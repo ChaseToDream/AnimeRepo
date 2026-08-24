@@ -126,4 +126,28 @@ function parseFilename(filename, folderName) {
   }
 }
 
+// B8：按自定义正则解析文件名（recognizeMode = 正则表达式 时使用）
+// 约定：最后一个数值捕获组为集数，其余捕获组拼接为标题；
+// 解析失败或正则非法时返回 null，由调用方回退到默认启发式解析。
+export function parseWithRegex(filename, pattern) {
+  try {
+    const re = new RegExp(pattern)
+    const m = (filename || '').match(re)
+    if (!m || m.length < 2) return null
+    const groups = m.slice(1)
+    const num = parseInt(groups[groups.length - 1], 10)
+    if (Number.isNaN(num)) return null
+    const title = groups.slice(0, -1).filter(Boolean).join(' ').trim() || '未知番剧'
+    return {
+      animeTitle: title,
+      titleKey: titleKey(title),
+      season: 1,
+      number: num,
+      epTitle: `第 ${num} 话`
+    }
+  } catch (e) {
+    return null
+  }
+}
+
 export { parseFilename, titleKey, cleanTitlePart }

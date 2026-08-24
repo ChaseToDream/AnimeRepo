@@ -418,14 +418,13 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="字幕字体"
-                  desc="字幕使用的字体（即将支持）"
+                  desc="字幕使用的字体"
                   control={
                     <Select
                       value={settings.subtitleFont}
                       options={['思源黑体', '微软雅黑', '苹方', 'Noto Sans CJK']}
                       onChange={(v) => set({ subtitleFont: v })}
                       width={180}
-                      disabled
                     />
                   }
                 />
@@ -436,7 +435,7 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="字幕底部边距"
-                  desc="字幕距离底部的像素距离（即将支持）"
+                  desc="字幕距离底部的像素距离"
                   control={
                     <div className="ds-input settings-number-input">
                       <input
@@ -444,7 +443,6 @@ export default function Settings() {
                         min="0"
                         max="500"
                         value={settings.subtitleBottomMargin}
-                        disabled
                         onChange={(e) => set({ subtitleBottomMargin: Number(e.target.value) || 0 })}
                       />
                       <span className="settings-number-suffix">px</span>
@@ -453,14 +451,13 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="首选字幕语言"
-                  desc="多字幕轨道时的优先选择（即将支持）"
+                  desc="多字幕轨道时优先选择匹配的语言"
                   control={
                     <Select
                       value={settings.preferredSubtitleLang}
                       options={['简体中文', '繁体中文', '日文', '英文']}
                       onChange={(v) => set({ preferredSubtitleLang: v })}
                       width={180}
-                      disabled
                     />
                   }
                 />

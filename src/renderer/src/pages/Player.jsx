@@ -280,11 +280,20 @@ export default function Player() {
 
   // —— 字幕 ——
   // 当前剧集可用字幕轨（N1：支持多字幕选择；兼容旧 subtitlePath 数据）
+  // O1：多轨时按首选字幕语言（preferredSubtitleLang）关键词排序，命中项排前
   const subtitleList = useMemo(() => {
-    const paths = ep?.subtitlePaths || []
-    if (paths.length) return paths
-    return ep?.subtitlePath ? [ep.subtitlePath] : []
-  }, [ep])
+    const paths = ep?.subtitlePaths && ep?.subtitlePaths.length
+      ? ep.subtitlePaths
+      : (ep?.subtitlePath ? [ep.subtitlePath] : [])
+    if (paths.length < 2) return paths
+    const lang = settings?.preferredSubtitleLang || ''
+    const langRe = lang ? new RegExp(lang.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null
+    const inName = (p) => {
+      if (!langRe) return 0
+      return langRe.test(String(p).split(/[\\/]/).pop() || '') ? 1 : 0
+    }
+    return paths.slice().sort((a, b) => inName(b) - inName(a))
+  }, [ep, settings?.preferredSubtitleLang])
 
   // 加载当前选择的字幕轨内容
   useEffect(() => {
@@ -311,20 +320,23 @@ export default function Player() {
     return () => URL.revokeObjectURL(url)
   }, [subtitleText])
 
-  // 字幕显示样式（字号 / 描边），通过动态 <style> 注入 ::cue
+  // 字幕显示样式（字号 / 字体 / 描边 / 底部边距），通过动态 <style> 注入 ::cue
   useEffect(() => {
     const style = document.createElement('style')
     const stroke = settings?.subtitleStroke !== false
+    // O1：接入 subtitleFont（字体）与 subtitleBottomMargin（底部边距）设置
     style.textContent = `
       .player-video::cue {
         font-size: ${SUB_SIZE_MAP[subSize] || '1.15em'};
+        font-family: ${settings?.subtitleFont || '思源黑体'}, sans-serif;
         background: rgba(0, 0, 0, 0.6);
         text-shadow: ${stroke ? '1px 1px 2px #000, 0 0 1px #000' : 'none'};
+        padding-bottom: ${settings?.subtitleBottomMargin || 60}px;
       }
     `
     document.head.appendChild(style)
     return () => { document.head.removeChild(style) }
-  }, [subSize, settings?.subtitleStroke])
+  }, [subSize, settings?.subtitleStroke, settings?.subtitleFont, settings?.subtitleBottomMargin])
 
   // —— 播放错误态 ——
   // 视频加载/解码失败时给出可操作的错误提示

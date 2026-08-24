@@ -2,13 +2,34 @@
 import fs from 'fs'
 import path from 'path'
 import { shell } from 'electron'
-import { parseFilename, titleKey } from './parser'
+import { parseFilename, parseWithRegex, titleKey } from './parser'
 import { offlineDefaults, fetchOnline } from './metadata'
 import { cacheCover } from './coverCache'
 
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|m2ts|rmvb|rm)$/i
 const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub)$/i
 const METADATA_CONCURRENCY = 3
+
+// B8：正则转义，构建视频格式白名单时防止用户输入的正则元字符破坏匹配
+function escapeRe(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// B8：由 settings.videoFormats 构造视频判定函数；未配置时回退内置 VIDEO_EXT
+function makeVideoTest(formats) {
+  const list = (Array.isArray(formats) ? formats : []).filter(Boolean)
+  if (!list.length) return (name) => VIDEO_EXT.test(name)
+  const re = new RegExp(`\\.(${list.map(escapeRe).join('|')})$`, 'i')
+  return (name) => re.test(name)
+}
+
+// B8：扫描深度设置 → 最大子目录层级（null 表示不设限）
+function depthFromSetting(scanDepth) {
+  if (scanDepth === '仅当前目录') return 0
+  if (scanDepth === '一层子目录') return 1
+  if (scanDepth === '两层子目录') return 2
+  return null // 深度扫描 / 默认
+}
 
 // 在视频同目录查找全部候选字幕文件（启用 scanSubtitle 时使用），按优先级排序返回路径数组
 // 优先级：同名 > 同名前缀 > 含中文字幕标记 > 扩展名 srt > ass
@@ -40,10 +61,12 @@ function findSubtitles(videoFile, folder, dirCache) {
 }
 
 // 异步递归遍历（P4-1：readdirSync → readdir 异步，避免大库扫描阻塞主进程）
-async function walkFiles(root, onFile) {
-  const stack = [root]
+// options：{ maxDepth, isVideo } —— maxDepth 限制子目录层级（null 不设限），isVideo 自定义视频判定
+async function walkFiles(root, options, onFile) {
+  const { maxDepth, isVideo } = options || {}
+  const stack = [{ dir: root, depth: 0 }]
   while (stack.length) {
-    const dir = stack.pop()
+    const { dir, depth } = stack.pop()
     let entries
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -53,8 +76,10 @@ async function walkFiles(root, onFile) {
     for (const ent of entries) {
       const full = path.join(dir, ent.name)
       if (ent.isDirectory()) {
-        stack.push(full)
-      } else if (ent.isFile() && VIDEO_EXT.test(ent.name)) {
+        if (maxDepth == null || depth < maxDepth) {
+          stack.push({ dir: full, depth: depth + 1 })
+        }
+      } else if (ent.isFile() && isVideo(ent.name)) {
         onFile(full)
       }
     }
@@ -111,11 +136,17 @@ async function runPool(items, concurrency, fn) {
 async function scanLibrary(store, folders, settings, onProgress) {
   const result = { scanned: 0, added: 0, updated: 0 }
 
+  // B8：按设置构造视频格式判定与扫描深度
+  const isVideo = makeVideoTest(settings && settings.videoFormats)
+  const maxDepth = depthFromSetting(settings && settings.scanDepth)
+  const recognizeMode = (settings && settings.recognizeMode) || '自动识别'
+  const regexPattern = settings && settings.regexPattern
+
   // 收集全部文件（P4-1：异步遍历，避免阻塞主进程）
   const files = []
   for (const folder of folders || []) {
     try {
-      await walkFiles(folder, (f) => {
+      await walkFiles(folder, { maxDepth, isVideo }, (f) => {
         files.push(f)
         onProgress?.({ phase: 'collect', found: files.length })
       })
@@ -134,7 +165,10 @@ async function scanLibrary(store, folders, settings, onProgress) {
   const ignoredFiles = new Set()
   for (const file of files) {
     const folderName = path.basename(path.dirname(file))
-    const parsed = parseFilename(path.basename(file), folderName)
+    // B8：识别模式为「正则表达式」时优先按自定义正则解析，失败再回退默认启发式
+    const parsed = recognizeMode === '正则表达式' && regexPattern
+      ? (parseWithRegex(path.basename(file), regexPattern) || parseFilename(path.basename(file), folderName))
+      : parseFilename(path.basename(file), folderName)
     // 解析失败（无有效集数）的文件进入未匹配处理
     if (!parsed.number) {
       if (unmatchedAction === '自动忽略') {

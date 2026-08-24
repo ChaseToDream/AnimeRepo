@@ -46,9 +46,11 @@ export function registerIpc() {
       }
       case 'mark-watched':
       case 'mark-unwatched': {
+        // B5：批量标记改为单次落盘 + 单次状态重算，避免 N 集触发 N 次全量写盘
         const watched = action === 'mark-watched'
         for (const a of targets) {
-          for (const ep of a.episodes || []) store.setEpisodeWatched(a.id, ep.id, watched)
+          const epIds = (a.episodes || []).map((e) => e.id)
+          store.setEpisodesWatchedBulk(a.id, epIds, watched)
         }
         break
       }

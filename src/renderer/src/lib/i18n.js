@@ -23,6 +23,7 @@ const messages = {
     'status.stats': '统计面板',
     'status.library': '番剧库',
     'status.autoSync': '自动同步已开启',
+    'status.autoSyncOff': '自动同步已关闭',
     'status.count': '{n} 部番剧 · {e} 集',
     'status.libraries': '已用 {n} 个媒体库'
   },
@@ -48,6 +49,7 @@ const messages = {
     'status.stats': 'Stats',
     'status.library': 'Library',
     'status.autoSync': 'Auto-sync on',
+    'status.autoSyncOff': 'Auto-sync off',
     'status.count': '{n} anime · {e} episodes',
     'status.libraries': '{n} libraries'
   }
