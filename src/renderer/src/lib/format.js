@@ -57,14 +57,15 @@ export function progressPct(anime) {
 
 // 当前延续观看的剧集
 export function nextEpisode(anime) {
-  if (!anime || !Array.isArray(anime.episodes)) return null
+  if (!anime || !Array.isArray(anime.episodes) || !anime.episodes.length) return null
   const sorted = [...anime.episodes].sort((a, b) => a.number - b.number)
-  const unwatched = sorted.find((e) => !e.watched && e.progress >= 0 && (!e.watched || e.progress < (e.duration || 1)))
-  if (unwatched) return unwatched
-  // 正在看的（有进度）
-  const current = sorted.find((e) => e.progress > 0 && !e.watched)
+  // B8：全部已看时返回 null（不再错误指向最后一集）
+  if (sorted.every((e) => e.watched)) return null
+  // 优先返回有播放进度但未看完的剧集（断点续看）
+  const current = sorted.find((e) => !e.watched && e.progress > 0)
   if (current) return current
-  return sorted[sorted.length - 1]
+  // 否则返回第一个未观看的剧集
+  return sorted.find((e) => !e.watched) || null
 }
 
 // 视频文件 → anime:// 播放地址

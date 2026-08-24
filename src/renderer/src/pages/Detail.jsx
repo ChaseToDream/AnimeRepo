@@ -6,9 +6,9 @@ import {
   formatTime,
   progressPct,
   nextEpisode,
-  coverGradient,
   shortDate
 } from '../lib/format'
+import Poster from '../components/Poster'
 import './Detail.css'
 
 const TABS = [
@@ -96,17 +96,18 @@ export default function Detail() {
     .filter((a) => a.id !== anime.id && (a.genres || []).some((g) => (anime.genres || []).includes(g)))
     .slice(0, 8)
 
-  const poster = anime.coverUrl ? (
-    <img className="hero__poster-img" src={anime.coverUrl} alt={anime.title} />
-  ) : (
-    <div
-      className="hero__poster-bg"
-      style={{ background: coverGradient(anime.title), width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+  const poster = (
+    <Poster
+      anime={anime}
+      imgClassName="hero__poster-img"
+      imgStyle={{ width: '100%', height: '100%' }}
+      bgClassName="hero__poster-bg"
+      style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
     >
       <div className="hero__poster-text">
         <div className="hero__poster-title">{anime.title}</div>
       </div>
-    </div>
+    </Poster>
   )
 
   return (
@@ -383,11 +384,13 @@ export default function Detail() {
                 <div className="related-grid">
                   {related.map((a) => (
                     <div key={a.id} className="related-card" onClick={() => navigate(`/anime/${a.id}`)}>
-                      <div
-                        className="related-card__poster"
-                        style={{ background: a.coverUrl ? 'none' : coverGradient(a.title) }}
-                      >
-                        {a.coverUrl ? <img src={a.coverUrl} alt={a.title} /> : null}
+                      <div className="related-card__poster">
+                        <Poster
+                          anime={a}
+                          as="span"
+                          imgStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, textAlign: 'center', padding: 8, boxSizing: 'border-box' }}
+                        />
                       </div>
                       <div className="related-card__name">{a.title}</div>
                     </div>

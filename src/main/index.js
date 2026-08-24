@@ -1,14 +1,31 @@
 import { app, shell, BrowserWindow, protocol, net } from 'electron'
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { ensureDataFile } from './store'
+import { ensureDataFile, getSettings, flushSaveSync } from './store'
 import { registerIpc } from './ipc'
+import { VIDEO_EXT } from './scanner'
 
 // 自定义协议：anime://local/<base64path> 用于安全加载本地视频
 protocol.registerSchemesAsPrivileged([
   { scheme: 'anime', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ])
+
+// B7 安全校验：仅允许读取「媒体库文件夹内」且为受支持扩展名的视频文件
+function isAllowedMedia(filePath) {
+  try {
+    if (!filePath || !VIDEO_EXT.test(filePath)) return false
+    const folders = getSettings().libraryFolders || []
+    if (!folders.length) return false
+    const resolved = resolve(filePath).toLowerCase()
+    return folders.some((f) => {
+      const base = resolve(f).toLowerCase()
+      return resolved === base || resolved.startsWith(base + sep)
+    })
+  } catch (e) {
+    return false
+  }
+}
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -43,6 +60,8 @@ function createWindow() {
     if (url.hostname === 'local') {
       try {
         const filePath = Buffer.from(url.pathname.slice(1), 'base64url').toString('utf-8')
+        // B7：越权读取防护——仅放行媒体库内的视频文件
+        if (!isAllowedMedia(filePath)) return new Response('forbidden', { status: 403 })
         return net.fetch(pathToFileURL(filePath).toString())
       } catch (e) {
         return new Response('bad request', { status: 400 })
@@ -78,4 +97,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// P4-3：退出前同步落盘，避免异步合并写未完成导致数据丢失
+app.on('before-quit', () => {
+  flushSaveSync()
 })

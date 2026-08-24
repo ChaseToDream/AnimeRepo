@@ -124,6 +124,9 @@ export default function Player() {
   const [subtitleText, setSubtitleText] = useState('')
   const [vttUrl, setVttUrl] = useState('')
 
+  // —— 播放错误态 ——
+  const [playError, setPlayError] = useState('')
+
   // 同番剧剧集（按 number 排序）
   const episodes = (anime?.episodes || [])
     .slice()
@@ -225,6 +228,7 @@ export default function Player() {
   useEffect(() => {
     lastSaveRef.current = 0
     progressRef.current = { time: 0, dur: 0 }
+    setPlayError('')
     return () => {
       flushProgress()
     }
@@ -307,6 +311,12 @@ export default function Player() {
     document.head.appendChild(style)
     return () => { document.head.removeChild(style) }
   }, [subSize, settings?.subtitleStroke])
+
+  // —— 播放错误态 ——
+  // 视频加载/解码失败时给出可操作的错误提示
+  const handleVideoError = useCallback(() => {
+    setPlayError('视频文件不存在、已损坏或格式不受支持，无法播放')
+  }, [])
 
   // —— 自动下一集 ——
   // 播放结束：标记当前集已看，按设置自动播放下一集
@@ -429,9 +439,23 @@ export default function Player() {
             onPlay={() => { setPlaying(true); setSpeedMenuOpen(false) }}
             onPause={() => setPlaying(false)}
             onEnded={handleEnded}
+            onError={handleVideoError}
           >
             {vttUrl ? <track kind="subtitles" label="字幕" srcLang="zh" src={vttUrl} default /> : null}
           </video>
+
+          {/* 视频加载错误覆盖层 */}
+          {playError && (
+            <div className="player-error">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.4 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <p className="player-error__text">{playError}</p>
+              <button className="ds-btn ds-btn--brand" onClick={() => navigate(-1)}>返回详情</button>
+            </div>
+          )}
 
           {/* 左上角集数 */}
           <div className="player-video-corner player-video-corner--tl">

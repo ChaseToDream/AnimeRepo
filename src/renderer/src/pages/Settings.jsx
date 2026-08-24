@@ -675,12 +675,11 @@ export default function Settings() {
           )}
         </div>
 
-        {/* 底部操作条 */}
+        {/* 底部操作条：设置即时生效，"取消"无意义，故只保留"完成"与"恢复默认" */}
         <div className="settings-footer">
           <button className="ds-btn ds-btn--link" onClick={handleRestoreDefaults}>恢复默认</button>
           <div className="settings-footer__actions">
-            <button className="ds-btn ds-btn--secondary" onClick={() => setActiveSection('library')}>取消</button>
-            <button className="ds-btn ds-btn--brand" onClick={() => setActiveSection('library')}>保存</button>
+            <button className="ds-btn ds-btn--brand" onClick={() => setActiveSection('library')}>完成</button>
           </div>
         </div>
       </div>

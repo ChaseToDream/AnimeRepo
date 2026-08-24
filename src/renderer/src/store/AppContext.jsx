@@ -29,6 +29,13 @@ export function AppProvider({ children }) {
     refresh()
   }, [refresh])
 
+  // B6：强调色在应用启动时即应用（不再依赖进入设置页），设置变更时同步生效
+  useEffect(() => {
+    if (settings?.accentColor) {
+      document.documentElement.style.setProperty('--accent-color', settings.accentColor)
+    }
+  }, [settings?.accentColor])
+
   // 启动时（若开启自动扫描且无数据）执行一次初始扫描
   useEffect(() => {
     async function maybeAutoScan() {

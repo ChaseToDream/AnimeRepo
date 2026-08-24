@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
-import { STATUS_LABEL, formatHours, progressPct, coverGradient } from '../lib/format'
+import { STATUS_LABEL, formatHours, progressPct } from '../lib/format'
+import Poster from '../components/Poster'
 import './Stats.css'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -12,9 +13,15 @@ const STATUS_COLORS = {
 }
 const STATUS_ORDER = ['watching', 'completed', 'plan', 'onhold']
 
-function toDateKey(iso) {
+// B12：按本地时区取日期 key（toISOString 是 UTC，跨时区会导致"今天凌晨看的"被算到昨天）
+function toLocalDateKey(iso) {
   if (!iso) return ''
-  return iso.slice(0, 10)
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function relativeTime(iso) {
@@ -53,10 +60,10 @@ export default function Stats() {
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now)
     d.setDate(now.getDate() - i)
-    days.push({ key: toDateKey(d.toISOString()), label: WEEKDAYS[d.getDay()], count: 0 })
+    days.push({ key: toLocalDateKey(d.toISOString()), label: WEEKDAYS[d.getDay()], count: 0 })
   }
   library.forEach((a) => {
-    const slot = days.find((d) => d.key === toDateKey(a.lastWatchedAt))
+    const slot = days.find((d) => d.key === toLocalDateKey(a.lastWatchedAt))
     if (slot) slot.count += 1
   })
   const maxActivity = Math.max(1, ...days.map((d) => d.count))
@@ -105,12 +112,7 @@ export default function Stats() {
   // —— 评分最高 ——
   const topRated = [...rated].sort((a, b) => b.rating - a.rating).slice(0, 5)
 
-  const poster = (a, style) =>
-    a.coverUrl ? (
-      <img src={a.coverUrl} alt={a.title} onError={(e) => { e.currentTarget.style.display = 'none' }} />
-    ) : (
-      <span style={{ background: a.coverGradient || coverGradient(a.title) }}>{a.title}</span>
-    )
+  const poster = (a) => <Poster anime={a} as="span" />
 
   return (
     <div className="stats">

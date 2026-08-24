@@ -7,9 +7,9 @@ import {
   formatHours,
   episodeBadge,
   progressPct,
-  nextEpisode,
-  coverGradient
+  nextEpisode
 } from '../lib/format'
+import Poster from '../components/Poster'
 import './Library.css'
 
 const VIEW_TABS = [
@@ -179,13 +179,7 @@ export default function Library({ filter, setFilter }) {
                 {items.map((a) => (
                   <article className="anime-card" key={a.id} onClick={() => navigate(`/anime/${a.id}`)}>
                     <div className="anime-card__poster">
-                      {a.coverUrl ? (
-                        <img className="anime-card__poster-img" src={a.coverUrl} alt={a.title} onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                      ) : (
-                        <div className="anime-card__poster-bg" style={{ background: a.coverGradient || coverGradient(a.title) }}>
-                          {a.title}
-                        </div>
-                      )}
+                      <Poster anime={a} imgClassName="anime-card__poster-img" bgClassName="anime-card__poster-bg" />
                       <div className="anime-card__tags">
                         <span className={'ds-tag ' + (STATUS_TAG_CLASS[a.status] || '')}>
                           {STATUS_LABEL[a.status] || a.status}
@@ -243,11 +237,7 @@ export default function Library({ filter, setFilter }) {
                     <div className="anime-list__row" key={a.id} onClick={() => navigate(`/anime/${a.id}`)}>
                       <span className="anime-list__index">{i + 1}</span>
                       <div className="anime-list__thumb">
-                        {a.coverUrl ? (
-                          <img src={a.coverUrl} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                        ) : (
-                          <span style={{ background: a.coverGradient || coverGradient(a.title) }}>{a.title}</span>
-                        )}
+                        <Poster anime={a} as="span" />
                       </div>
                       <span className="anime-list__title">{a.title}</span>
                       <div className="anime-list__genres">

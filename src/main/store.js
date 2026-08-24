@@ -68,7 +68,31 @@ function ensureDataFile() {
   }
 }
 
+// P4-3：数据落盘改为「合并写」——连续多次变更合并为一次异步写入，
+// 避免每次进度保存都全量同步写文件阻塞主进程
+let writeDirty = false
+let writeInFlight = false
+
 function save() {
+  writeDirty = true
+  if (writeInFlight) return
+  writeInFlight = true
+  writeLoop()
+}
+
+function writeLoop() {
+  writeDirty = false
+  const payload = JSON.stringify({ animes: state.animes, settings: state.settings }, null, 2)
+  fs.writeFile(dataFile, payload, 'utf-8', (err) => {
+    if (err) console.error('保存数据失败', err)
+    if (writeDirty) writeLoop()
+    else writeInFlight = false
+  })
+}
+
+// 退出前同步落盘，确保异步写未完成时数据不丢失
+function flushSaveSync() {
+  writeDirty = false
   try {
     fs.writeFileSync(dataFile, JSON.stringify({ animes: state.animes, settings: state.settings }, null, 2), 'utf-8')
   } catch (e) {
@@ -211,6 +235,7 @@ function importJson(json) {
 export {
   ensureDataFile,
   save,
+  flushSaveSync,
   list,
   get,
   upsert,
