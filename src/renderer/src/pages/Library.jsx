@@ -11,6 +11,7 @@ import {
   nextEpisode
 } from '../lib/format'
 import Poster from '../components/Poster'
+import { ConfirmDialog, PromptDialog } from '../components/Dialog'
 import './Library.css'
 
 const VIEW_TABS = [
@@ -48,6 +49,9 @@ export default function Library({ filter, setFilter }) {
   // N4：多选模式与已选集
   const [selectionMode, setSelectionMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
+  // B-03：应用内对话框状态（替换原生 confirm / 不受支持的 window.prompt）
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
+  const [tagsDialogOpen, setTagsDialogOpen] = useState(false)
 
   // P3：搜索词延迟更新，避免每次输入触发全库过滤重算
   const deferredQuery = useDeferredValue(filter.query || '')
@@ -116,8 +120,13 @@ export default function Library({ filter, setFilter }) {
   const gridWrapRef = useRef(null)
   const [gridView, setGridView] = useState({ width: 0, height: 0, scrollTop: 0 })
 
+  // P6：网格容器仅在「网格视图且有内容」时挂载（空库时显示引导页）。
+  // 原先 effect 只依赖 [view]，空库启动时 ref 还是 null、观察器没挂上，
+  // 扫描完成网格首次出现后无人测量宽度（width=0 → 列数/行高全错，虚拟滚动失效）。
+  const gridMounted = view === 'grid' && library.length > 0 && items.length > 0
+
   useEffect(() => {
-    if (view !== 'grid') return
+    if (!gridMounted) return
     const el = gridWrapRef.current
     if (!el) return
     const update = () => setGridView((s) => ({ ...s, width: el.clientWidth, height: el.clientHeight }))
@@ -125,7 +134,7 @@ export default function Library({ filter, setFilter }) {
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [view])
+  }, [gridMounted])
 
   // P4-4：网格行间距与 CSS --spacer-16 保持一致，随界面密度同步（保证虚拟滚动行定位不漂移）
   const gridGap = settings?.uiDensity === '紧凑' ? 13 : settings?.uiDensity === '宽松' ? 19 : 16
@@ -187,21 +196,34 @@ export default function Library({ filter, setFilter }) {
     setSelected(new Set())
     showToast(`已对 ${count} 部番剧执行批量操作`, 'success')
   }
-  const handleBatchRemove = async () => {
+  // B-03：批量删除改为对话框确认（原生 confirm 在 frameless 窗口下样式割裂）
+  const handleBatchRemove = () => {
     if (!selected.size) return
-    if (confirm(`确定删除选中的 ${selected.size} 部番剧吗？此操作不可恢复。`)) {
-      await runBatch('remove')
-      setSelectionMode(false)
-    }
+    setConfirmRemoveOpen(true)
   }
+  const confirmBatchRemove = async () => {
+    setConfirmRemoveOpen(false)
+    await runBatch('remove')
+    setSelectionMode(false)
+  }
+  // B-03：批量标签改为应用内输入对话框（Electron 不支持 window.prompt，原实现静默失效）
   const handleBatchTags = () => {
     if (!selected.size) return
-    const tags = (window.prompt('输入标签（用逗号分隔）') || '')
+    setTagsDialogOpen(true)
+  }
+  const confirmBatchTags = async (text) => {
+    setTagsDialogOpen(false)
+    const tags = (text || '')
       .split(/[,，\s]+/)
       .map((s) => s.trim())
       .filter(Boolean)
-    if (tags.length) runBatch('set-tags', { tags })
+    if (tags.length) await runBatch('set-tags', { tags })
   }
+  // 已有标签集合（供标签输入对话框补全建议）
+  const allTags = useMemo(
+    () => [...new Set(library.flatMap((a) => a.tags || []))].sort((a, b) => a.localeCompare(b, 'zh')),
+    [library]
+  )
 
   return (
     <div className="library">
@@ -362,7 +384,15 @@ export default function Library({ filter, setFilter }) {
               <div
                 className="anime-grid-v"
                 ref={gridWrapRef}
-                onScroll={(e) => setGridView((s) => ({ ...s, scrollTop: e.currentTarget.scrollTop }))}
+                onScroll={(e) => {
+                  // P6 白屏卡死修复：必须在事件分发期间同步读取 currentTarget——
+                  // React 在事件分发结束后会把 synthetic event 的 currentTarget 置空，
+                  // 而 setState 的 updater 函数延迟到渲染阶段才执行；
+                  // 原先在 updater 内访问 e.currentTarget.scrollTop 会得到 null.scrollTop，
+                  // 渲染阶段抛出 TypeError 且无 Error Boundary 兜底 → 整棵组件树被卸载 → 白屏卡死
+                  const st = e.currentTarget.scrollTop
+                  setGridView((s) => ({ ...s, scrollTop: st }))
+                }}
               >
                 <div className="anime-grid-v__canvas" style={{ height: grid.totalH }}>
                   {grid.rows.map(({ r, items }) => (
@@ -481,6 +511,26 @@ export default function Library({ filter, setFilter }) {
           </>
         )}
       </div>
+
+      {/* B-03：批量删除确认 / 批量标签输入（应用内对话框） */}
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        title="删除番剧"
+        description={`确定删除选中的 ${selected.size} 部番剧吗？此操作不可恢复。`}
+        confirmText="删除"
+        danger
+        onConfirm={confirmBatchRemove}
+        onCancel={() => setConfirmRemoveOpen(false)}
+      />
+      <PromptDialog
+        open={tagsDialogOpen}
+        title="批量设置标签"
+        label="输入标签（用逗号分隔）"
+        placeholder="例如：神作, 治愈"
+        suggestions={allTags.slice(0, 30)}
+        onConfirm={confirmBatchTags}
+        onCancel={() => setTagsDialogOpen(false)}
+      />
     </div>
   )
 }

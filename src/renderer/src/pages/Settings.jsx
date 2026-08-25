@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApp } from '../store/AppContext'
+import { ConfirmDialog } from '../components/Dialog'
 import './Settings.css'
 
 // 恢复默认时用到的主要设置默认值（与主进程 DEFAULT_SETTINGS 保持一致）
@@ -141,6 +142,10 @@ function EditableTags({ value = [], onChange }) {
 export default function Settings() {
   const { settings, updateSettings, addFolder, removeFolder, refresh, version, api, library, showToast } = useApp()
   const [activeSection, setActiveSection] = useState('library')
+  // B-03：应用内确认对话框状态（替换原生 confirm）
+  const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false)
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+  const [defaultsConfirmOpen, setDefaultsConfirmOpen] = useState(false)
 
   // 加载时与强调色变化时同步 CSS 变量
   useEffect(() => {
@@ -161,30 +166,45 @@ export default function Settings() {
     const ok = await api.exportData()
     showToast(ok ? '数据已导出' : '导出已取消', ok ? 'success' : 'info')
   }
+  // B-06：主进程导入返回 { ok, imported, skipped }，区分取消 / 失败 / 成功（含剔除统计）
   const handleImport = async () => {
-    const ok = await api.importData()
-    showToast(ok ? '数据已导入' : '导入失败或已取消', ok ? 'success' : 'error')
+    const res = await api.importData()
+    if (!res) {
+      showToast('导入已取消', 'info')
+      return
+    }
+    if (!res.ok) {
+      showToast('导入失败：文件格式无效', 'error')
+      return
+    }
     refresh()
+    showToast(
+      res.skipped > 0
+        ? `已导入 ${res.imported} 部番剧，跳过 ${res.skipped} 条无效数据`
+        : `已导入 ${res.imported} 部番剧`,
+      res.skipped > 0 ? 'warning' : 'success'
+    )
   }
-  const handleRebuild = async () => {
-    if (confirm('确定要重建数据库吗？这可能需要几分钟时间。')) {
-      await api.rebuildDatabase()
-      refresh()
-      showToast('数据库已重建', 'success')
-    }
+  // B-03：以下三处由原生 confirm 改为应用内 ConfirmDialog
+  const handleRebuild = () => setRebuildConfirmOpen(true)
+  const confirmRebuild = async () => {
+    setRebuildConfirmOpen(false)
+    await api.rebuildDatabase()
+    refresh()
+    showToast('数据库已重建', 'success')
   }
-  const handleReset = async () => {
-    if (confirm('确定要重置所有数据吗？此操作将删除所有番剧与设置，且无法恢复。')) {
-      await api.resetData()
-      refresh()
-      showToast('所有数据已重置', 'success')
-    }
+  const handleReset = () => setResetConfirmOpen(true)
+  const confirmReset = async () => {
+    setResetConfirmOpen(false)
+    await api.resetData()
+    refresh()
+    showToast('所有数据已重置', 'success')
   }
-  const handleRestoreDefaults = () => {
-    if (confirm('确定要恢复为默认设置吗？当前设置将被覆盖。')) {
-      updateSettings({ ...DEFAULTS })
-      showToast('已恢复默认设置', 'success')
-    }
+  const handleRestoreDefaults = () => setDefaultsConfirmOpen(true)
+  const confirmRestoreDefaults = () => {
+    setDefaultsConfirmOpen(false)
+    updateSettings({ ...DEFAULTS })
+    showToast('已恢复默认设置', 'success')
   }
 
   // 媒体库文件夹计数（按路径前缀粗略统计）
@@ -730,6 +750,33 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      {/* B-03：危险/重要操作确认对话框（替换原生 confirm） */}
+      <ConfirmDialog
+        open={rebuildConfirmOpen}
+        title="重建数据库"
+        description="确定要重建数据库吗？这可能需要几分钟时间。观看进度与评分会被保留。"
+        confirmText="重建"
+        onConfirm={confirmRebuild}
+        onCancel={() => setRebuildConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        title="重置所有数据"
+        description="确定要重置所有数据吗？此操作将删除所有番剧与设置，且无法恢复。"
+        confirmText="全部删除"
+        danger
+        onConfirm={confirmReset}
+        onCancel={() => setResetConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={defaultsConfirmOpen}
+        title="恢复默认设置"
+        description="确定要恢复为默认设置吗？当前设置将被覆盖（媒体库文件夹保留）。"
+        confirmText="恢复默认"
+        onConfirm={confirmRestoreDefaults}
+        onCancel={() => setDefaultsConfirmOpen(false)}
+      />
     </div>
   )
 }

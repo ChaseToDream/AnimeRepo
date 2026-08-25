@@ -37,11 +37,13 @@ export function formatHours(secs) {
 export function episodeBadge(anime) {
   if (!anime || !Array.isArray(anime.episodes)) return 'EP 0/0'
   const total = anime.episodes.length
-  const current = Math.max(
-    0,
-    ...anime.episodes.map((e) => (e.watched ? e.number : 0))
-  )
-  const lastEp = anime.episodes[anime.episodes.length - 1]
+  // P6：不用 Math.max(...map) 展开——单个番剧剧集数超过 ~6.5 万时（如把媒体库指向
+  // 存放大量无法解析文件的目录，全部归入同一个「未知番剧」）展开会抛 RangeError，
+  // 渲染期异常同样导致整棵树卸载白屏
+  let current = 0
+  for (const e of anime.episodes) {
+    if (e.watched && e.number > current) current = e.number
+  }
   const isMovie = total === 1
   if (isMovie) return '剧场版'
   const lastWatched = anime.episodes.filter((e) => e.watched).length

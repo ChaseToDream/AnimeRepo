@@ -3,7 +3,7 @@ import { ipcMain, dialog, app, shell, BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import * as store from './store'
-import { scanLibrary, rebuildDatabase } from './scanner'
+import { scanLibrary, rebuildDatabase, makeEpisodeId } from './scanner'
 import { titleKey } from './parser'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
@@ -24,7 +24,7 @@ function scanProgressSender(sender) {
     pending = null
     if (win && !win.isDestroyed()) win.webContents.send('scan:progress', info)
   }
-  return (info) => {
+  const send = (info) => {
     if (!win || win.isDestroyed()) return
     pending = info
     if (timer) return
@@ -40,6 +40,18 @@ function scanProgressSender(sender) {
       }, wait)
     }
   }
+  // P5：扫描结束时调用——取消节流定时器、丢弃未发送的残留进度并立即推送
+  // done 事件，渲染端据此清空进度状态（避免残留旧值闪烁，也避免迟到的
+  // 节流事件在 done 之后到达覆盖清空结果）
+  send.end = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    pending = null
+    if (win && !win.isDestroyed()) win.webContents.send('scan:progress', { phase: 'done' })
+  }
+  return send
 }
 
 export function registerIpc() {
@@ -48,7 +60,13 @@ export function registerIpc() {
   ipcMain.handle('library:get-one', (_e, id) => store.get(id))
   ipcMain.handle('library:scan', async (e) => {
     const settings = store.getSettings()
-    return scanLibrary(store, settings.libraryFolders || [], settings, scanProgressSender(e.sender))
+    const progress = scanProgressSender(e.sender)
+    try {
+      return await scanLibrary(store, settings.libraryFolders || [], settings, progress)
+    } finally {
+      // P5：无论成功/失败都通知渲染端扫描已结束，清空进度状态
+      progress.end()
+    }
   })
   ipcMain.handle('anime:update', (_e, id, patch) => store.updateAnime(id, patch))
   ipcMain.handle('anime:remove', (_e, id) => store.remove(id))
@@ -129,7 +147,13 @@ export function registerIpc() {
     if (!moved.length) return store.list()
     const id = 'anime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
     const title = (newTitle && newTitle.trim()) || from.title
-    const episodes = moved.map((ep) => ({ ...ep, id: `${id}-ep${ep.number}`, animeId: id }))
+    // B-01：拆分时同样保证组内 ID 唯一（number=0 未分类条目按路径哈希区分）
+    const usedIds = new Set()
+    const episodes = moved.map((ep) => ({
+      ...ep,
+      id: makeEpisodeId(id, ep.number, ep.filePath || ep.id, usedIds),
+      animeId: id
+    }))
     store.upsert({
       id,
       titleKey: titleKey(title),
@@ -208,7 +232,12 @@ export function registerIpc() {
   })
   ipcMain.handle('data:rebuild', async (e) => {
     const settings = store.getSettings()
-    return rebuildDatabase(store, settings.libraryFolders || [], settings, scanProgressSender(e.sender))
+    const progress = scanProgressSender(e.sender)
+    try {
+      return await rebuildDatabase(store, settings.libraryFolders || [], settings, progress)
+    } finally {
+      progress.end()
+    }
   })
   ipcMain.handle('data:reset', () => {
     store.reset()

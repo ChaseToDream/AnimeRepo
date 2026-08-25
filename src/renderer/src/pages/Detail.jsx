@@ -13,6 +13,7 @@ import {
   STATUS_TAG_CLASS
 } from '../lib/format'
 import Poster from '../components/Poster'
+import { ConfirmDialog } from '../components/Dialog'
 import './Detail.css'
 
 const TABS = [
@@ -39,6 +40,8 @@ export default function Detail() {
   // N3：管理弹窗（合并 / 拆分）
   const [manageOpen, setManageOpen] = useState(false)
   const [mergeTarget, setMergeTarget] = useState('')
+  // B-03：合并确认对话框（替换原生 confirm）
+  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false)
   const [splitEpIds, setSplitEpIds] = useState(() => new Set())
   const [splitTitle, setSplitTitle] = useState('')
 
@@ -117,15 +120,17 @@ export default function Detail() {
       return next
     })
   }
-  const handleMerge = async () => {
+  // B-03：合并操作先弹应用内确认框，确认后执行
+  const handleMerge = () => {
     if (!mergeTarget) return
-    const target = library.find((x) => x.id === mergeTarget)
-    if (confirm(`将「${anime.title}」的 ${anime.episodes?.length || 0} 集合并到「${target?.title}」，并删除当前条目？`)) {
-      await mergeAnime(anime.id, mergeTarget)
-      setManageOpen(false)
-      showToast('合并完成', 'success')
-      navigate('/')
-    }
+    setMergeConfirmOpen(true)
+  }
+  const confirmMerge = async () => {
+    setMergeConfirmOpen(false)
+    await mergeAnime(anime.id, mergeTarget)
+    setManageOpen(false)
+    showToast('合并完成', 'success')
+    navigate('/')
   }
   const handleSplit = async () => {
     if (!splitEpIds.size) return
@@ -590,6 +595,16 @@ export default function Detail() {
           </div>
         </div>
       )}
+
+      {/* B-03：合并确认对话框 */}
+      <ConfirmDialog
+        open={mergeConfirmOpen}
+        title="合并番剧"
+        description={`将「${anime.title}」的 ${anime.episodes?.length || 0} 集合并到「${library.find((x) => x.id === mergeTarget)?.title || ''}」，并删除当前条目？`}
+        confirmText="合并"
+        onConfirm={confirmMerge}
+        onCancel={() => setMergeConfirmOpen(false)}
+      />
     </div>
   )
 }

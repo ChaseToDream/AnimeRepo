@@ -1,6 +1,7 @@
 // 媒体扫描服务：递归扫描库文件夹，识别视频文件并解析出番剧/剧集
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 import { shell } from 'electron'
 import { parseFilename, parseWithRegex, titleKey } from './parser'
 import { offlineDefaults, fetchOnline } from './metadata'
@@ -9,6 +10,10 @@ import { cacheCover } from './coverCache'
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|m2ts|rmvb|rm)$/i
 const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub)$/i
 const METADATA_CONCURRENCY = 3
+// P5：在线元数据连续失败熔断阈值——网络不可达（如 AniList 被墙）时
+// 每部新番都要等满 10s 超时，大库首扫会被拖长至几十分钟；
+// 连续失败达到阈值后跳过本轮剩余请求（新番仍以离线默认资料入库，下次扫描自动重试）
+const METADATA_FAIL_LIMIT = 5
 
 // B8：正则转义，构建视频格式白名单时防止用户输入的正则元字符破坏匹配
 function escapeRe(str) {
@@ -33,12 +38,14 @@ function depthFromSetting(scanDepth) {
 
 // 在视频同目录查找全部候选字幕文件（启用 scanSubtitle 时使用），按优先级排序返回路径数组
 // 优先级：同名 > 同名前缀 > 含中文字幕标记 > 扩展名 srt > ass
-function findSubtitles(videoFile, folder, dirCache) {
+// P5：readdirSync → 异步 readdir——大库扫描时同步枚举目录会阻塞主进程事件循环，
+// 使 IPC（窗口操作等）与 anime:// 封面协议请求排队，加剧界面卡死
+async function findSubtitles(videoFile, folder, dirCache) {
   if (!videoFile || !folder) return []
   try {
     let entries = dirCache ? dirCache.get(folder) : null
     if (!entries) {
-      entries = fs.readdirSync(folder).filter((n) => SUBTITLE_EXT.test(n))
+      entries = (await fs.promises.readdir(folder)).filter((n) => SUBTITLE_EXT.test(n))
       if (dirCache) dirCache.set(folder, entries)
     }
     if (!entries.length) return []
@@ -102,7 +109,9 @@ async function walkFiles(root, options, onFile) {
 // N6：读取本地 .nfo 信息（Kodi/Emby 风格，正则解析，不引入 XML 依赖）
 // B8：按 settings.infoFormats 决定是否启用；当前仅支持 .nfo 文本解析，
 // 其他扩展名（json/xml）因格式异构暂不解析，未含 nfo 则禁用本地信息。
-function readLocalInfo(folder, infoFormats) {
+// P5：readdirSync/readFileSync → 异步——preferLocalInfo 默认开启，
+// 每个新番剧都会触发一次本地 NFO 读取，同步 I/O 会阻塞主进程
+async function readLocalInfo(folder, infoFormats) {
   if (!folder) return null
   const exts = (Array.isArray(infoFormats) && infoFormats.length
     ? infoFormats
@@ -111,11 +120,11 @@ function readLocalInfo(folder, infoFormats) {
   if (!exts.includes('nfo')) return null
   try {
     let nfo = ''
-    for (const name of fs.readdirSync(folder)) {
+    for (const name of await fs.promises.readdir(folder)) {
       if (/\.nfo$/i.test(name)) { nfo = path.join(folder, name); break }
     }
     if (!nfo) return null
-    const text = fs.readFileSync(nfo, 'utf-8')
+    const text = await fs.promises.readFile(nfo, 'utf-8')
     const get = (tag) => {
       const m = text.match(new RegExp(`<${tag}>(?:<!\\[CDATA\\[)?([^<]*?)(?:\\]\\]>)?</${tag}>`, 'i'))
       return m ? m[1].trim() : ''
@@ -138,6 +147,23 @@ function readLocalInfo(folder, infoFormats) {
   }
 }
 
+// B-01 修复：生成组内唯一剧集 ID——常规集数沿用 `${animeId}-ep${number}`（兼容历史数据，
+// 保留观看进度匹配）；number=0（未识别文件兜底）或同组编号冲突时，追加文件路径哈希后缀
+// 保证唯一。此前未分类文件全部兜底 number=0，同目录多个文件生成相同 ID，导致
+// setProgress/setWatched 永远只命中第一条、观看进度互相覆盖、React key 冲突。
+function makeEpisodeId(animeId, number, filePath, usedIds) {
+  let id = `${animeId}-ep${number}`
+  if (number === 0 || usedIds.has(id)) {
+    const h = crypto.createHash('md5').update(filePath).digest('hex').slice(0, 8)
+    id = `${animeId}-ep${number}-${h}`
+    // 极端情况（同一路径产生多条记录）下追加序号兜底
+    let i = 1
+    while (usedIds.has(id)) id = `${animeId}-ep${number}-${h}-${i++}`
+  }
+  usedIds.add(id)
+  return id
+}
+
 // 并发限流执行器（P4-2：元数据请求并发，避免串行等待）
 async function runPool(items, concurrency, fn) {
   if (!items.length) return
@@ -151,9 +177,27 @@ async function runPool(items, concurrency, fn) {
   await Promise.all(workers)
 }
 
+// P5：扫描互斥锁——手动扫描（library:scan）、引导扫描与后台自动扫描（autosync）
+// 共用此入口。原先两者可并发双跑，I/O、元数据请求与全量写盘全部翻倍，
+// 期间渲染进程还持续接收双份进度推送，是扫描白屏卡死的帮凶。
+let scanRunning = false
+
 // 主扫描：返回新增/更新后的番剧列表
 // onProgress：可选进度回调，阶段 collect（已发现文件数）/ metadata（在线元数据下载进度）
 async function scanLibrary(store, folders, settings, onProgress) {
+  if (scanRunning) {
+    // 已有扫描在进行：直接返回当前库快照，skipped 标记供调用方识别
+    return { scanned: 0, added: 0, updated: 0, removed: 0, skipped: true, animes: store.list() }
+  }
+  scanRunning = true
+  try {
+    return await doScan(store, folders, settings, onProgress)
+  } finally {
+    scanRunning = false
+  }
+}
+
+async function doScan(store, folders, settings, onProgress) {
   const result = { scanned: 0, added: 0, updated: 0 }
 
   // B8：按设置构造视频格式判定与扫描深度
@@ -221,15 +265,27 @@ async function scanLibrary(store, folders, settings, onProgress) {
   }
 
   // P4-2/O5：并发预取「新番剧」在线元数据（并发限流 + fetchOnline 内存缓存，避免逐个串行等待）
+  // P5：连续失败熔断——网络不可达时跳过本轮剩余请求，避免大库首扫被 10s×N 超时拖死
   const onlineCache = new Map()
   if (settings && settings.autoDownload) {
     const pending = [...groups.values()].filter((g) => !store.findByTitleKey(g.titleKey))
     if (pending.length) {
       let done = 0
+      let consecutiveFails = 0
       onProgress?.({ phase: 'metadata', total: pending.length, current: 0 })
       await runPool(pending, METADATA_CONCURRENCY, async (g) => {
+        if (consecutiveFails >= METADATA_FAIL_LIMIT) {
+          done++
+          onProgress?.({ phase: 'metadata', total: pending.length, current: done })
+          return
+        }
         const online = await fetchOnline(g.animeTitle)
-        if (online && online.title) onlineCache.set(g.titleKey, online)
+        if (online && online.title) {
+          onlineCache.set(g.titleKey, online)
+          consecutiveFails = 0
+        } else {
+          consecutiveFails++
+        }
         done++
         onProgress?.({ phase: 'metadata', total: pending.length, current: done })
       })
@@ -243,11 +299,26 @@ async function scanLibrary(store, folders, settings, onProgress) {
     if (anime && Array.isArray(anime.episodes)) {
       // 更新已有番剧：合并剧集（保留原有 watched/progress）
       const existingMap = new Map(anime.episodes.map((e) => [e.number, e]))
-      const episodes = g.episodes.map((ge) => {
-        const old = existingMap.get(ge.number)
-        const subs = settings && settings.scanSubtitle ? findSubtitles(ge.file, g.path, dirCache) : []
-        return {
-          id: old ? old.id : `${anime.id}-ep${ge.number}`,
+      // B-01：number=0 的未分类剧集无法按集数区分，改按文件路径匹配旧条目
+      const existingByPath = new Map(
+        anime.episodes.filter((e) => e.number === 0 && e.filePath).map((e) => [e.filePath, e])
+      )
+      // B-01：记录已占用 ID，防止同组重复编号（同集多版本文件）生成重复 ID
+      const usedIds = new Set()
+      const episodes = []
+      for (const ge of g.episodes) {
+        const old =
+          ge.number > 0 ? existingMap.get(ge.number) : existingByPath.get(ge.file)
+        let id
+        if (old && !usedIds.has(old.id)) {
+          id = old.id
+          usedIds.add(id)
+        } else {
+          id = makeEpisodeId(anime.id, ge.number, ge.file, usedIds)
+        }
+        const subs = settings && settings.scanSubtitle ? await findSubtitles(ge.file, g.path, dirCache) : []
+        episodes.push({
+          id,
           animeId: anime.id,
           number: ge.number,
           title: old ? old.title : ge.epTitle || `第 ${ge.number} 话`,
@@ -259,8 +330,8 @@ async function scanLibrary(store, folders, settings, onProgress) {
           season: g.season,
           subtitlePath: subs[0] || (old ? old.subtitlePath : ''),
           subtitlePaths: subs.length ? subs : (old && Array.isArray(old.subtitlePaths) ? old.subtitlePaths : [])
-        }
-      })
+        })
+      }
       anime = store.updateAnime(anime.id, {
         episodes,
         aired: episodes.length,
@@ -274,7 +345,7 @@ async function scanLibrary(store, folders, settings, onProgress) {
       let info = offlineDefaults(g.animeTitle, g.season, g.episodes.length)
       // N6：本地 NFO 信息优先（preferLocalInfo 开启时）
       let localInfo = null
-      if (settings && settings.preferLocalInfo) localInfo = readLocalInfo(g.path, settings.infoFormats)
+      if (settings && settings.preferLocalInfo) localInfo = await readLocalInfo(g.path, settings.infoFormats)
       if (localInfo) info = { ...info, ...localInfo }
       // 在线元数据补充（preferLocalInfo 时本地字段优先，否则在线覆盖默认）
       const online = onlineCache.get(g.titleKey)
@@ -283,10 +354,13 @@ async function scanLibrary(store, folders, settings, onProgress) {
       }
       // N8：封面下载到本地缓存（失败时回退为原网络 URL）
       if (info.coverUrl) info.coverUrl = await cacheCover(info.coverUrl)
-      const episodes = g.episodes.map((ge, i) => {
-        const subs = settings && settings.scanSubtitle ? findSubtitles(ge.file, g.path, dirCache) : []
-        return {
-          id: `${id}-ep${ge.number}`,
+      const episodes = []
+      // B-01：组内 ID 唯一化（number=0 未分类文件追加路径哈希后缀）
+      const usedIds = new Set()
+      for (const ge of g.episodes) {
+        const subs = settings && settings.scanSubtitle ? await findSubtitles(ge.file, g.path, dirCache) : []
+        episodes.push({
+          id: makeEpisodeId(id, ge.number, ge.file, usedIds),
           animeId: id,
           number: ge.number,
           title: ge.epTitle || `第 ${ge.number} 话`,
@@ -298,8 +372,8 @@ async function scanLibrary(store, folders, settings, onProgress) {
           season: g.season,
           subtitlePath: subs[0] || '',
           subtitlePaths: subs
-        }
-      })
+        })
+      }
       anime = store.upsert({
         id,
         titleKey: g.titleKey,
@@ -347,24 +421,30 @@ async function scanLibrary(store, folders, settings, onProgress) {
     }
     const snapshot = store.list().slice()
     for (const a of snapshot) {
-      const alive = (a.episodes || []).filter((e) => {
-        if (!e.filePath) return false
-        if (existingFiles.has(e.filePath)) return true
+      // P5：原 filter + fs.existsSync 逐条同步校验磁盘存在性，大库时阻塞主进程；
+      // 改为循环内异步 access（filter 回调不支持 await）
+      const alive = []
+      for (const e of a.episodes || []) {
+        if (!e.filePath) continue
+        if (existingFiles.has(e.filePath)) {
+          alive.push(e)
+          continue
+        }
         // 属于当前媒体库但未在本次扫描范围内：磁盘上仍存在则保留，避免误删
         if (underCurrentFolders(e.filePath)) {
           try {
-            return fs.existsSync(e.filePath)
+            await fs.promises.access(e.filePath)
+            alive.push(e)
           } catch {
-            return false
+            // 磁盘上已不存在
           }
         }
-        // 媒体库文件夹已被移除或文件已不在任何当前媒体库内：视为失效清理
-        return false
-      })
+        // 媒体库文件夹已被移除或文件已不在任何当前媒体库内：视为失效清理（不入 alive）
+      }
       if (alive.length === 0) {
         store.remove(a.id)
         removed++
-      } else if (alive.length !== a.episodes.length) {
+      } else if (alive.length !== (a.episodes || []).length) {
         store.updateAnime(a.id, { episodes: alive, aired: alive.length })
       }
     }
@@ -389,4 +469,4 @@ async function rebuildDatabase(store, folders, settings, onProgress) {
   }
 }
 
-export { scanLibrary, rebuildDatabase, VIDEO_EXT }
+export { scanLibrary, rebuildDatabase, VIDEO_EXT, makeEpisodeId }

@@ -5,12 +5,35 @@ import { createTranslator } from '../lib/i18n'
 
 const AppContext = createContext(null)
 
+// 扫描进度独立 Context（P5 修复白屏卡死）：进度事件以 100ms 间隔高频推送，
+// 若挂在全局 AppContext 的 value 上，每次进度更新都会使 context 引用变化，
+// 导致所有 useApp() 消费者（ShellLayout/Sidebar/Library/Stats/Settings 等）
+// 以 10Hz 全树重渲染——开发模式下单次渲染超 100ms 时渲染主线程被占满，
+// 窗口被系统判定为未响应而白屏卡死。独立 Context 仅状态栏订阅，隔离高频更新。
+const ScanProgressContext = createContext(null)
+
+export function ScanProgressProvider({ children }) {
+  const [progress, setProgress] = useState(null)
+  useEffect(() => {
+    return api.onScanProgress((info) => {
+      if (!info) return
+      // 主进程在扫描结束时推送 done：清空进度，避免残留旧值在下一次扫描开始时闪烁
+      if (info.phase === 'done') setProgress(null)
+      else setProgress(info)
+    })
+  }, [])
+  return <ScanProgressContext.Provider value={progress}>{children}</ScanProgressContext.Provider>
+}
+
+export function useScanProgress() {
+  return useContext(ScanProgressContext)
+}
+
 export function AppProvider({ children }) {
   const [library, setLibrary] = useState([])
   const [settings, setSettings] = useState(null)
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
-  const [scanProgress, setScanProgress] = useState(null)
   const [version, setVersion] = useState('1.0.0')
   // U2：全局 Toast
   const [toasts, setToasts] = useState([])
@@ -83,10 +106,7 @@ export function AppProvider({ children }) {
     else delete document.documentElement.dataset.animations
   }, [settings?.enableAnimations])
 
-  // O4：订阅扫描进度事件（主进程在扫描过程中推送）
-  useEffect(() => {
-    return api.onScanProgress(setScanProgress)
-  }, [])
+  // O4：扫描进度订阅已迁移至 ScanProgressProvider（独立 Context，见文件头部说明）
 
   // 启动时（若开启自动扫描且无数据）执行一次初始扫描
   useEffect(() => {
@@ -95,14 +115,12 @@ export function AppProvider({ children }) {
       if (settings?.autoScanOnStartup && library.length === 0) {
         try {
           setScanning(true)
-          setScanProgress(null)
           const res = await api.scanLibrary()
-          if (res) setLibrary(res.animes)
+          if (res && !res.skipped) setLibrary(res.animes)
         } catch (e) {
           // 忽略
         } finally {
           setScanning(false)
-          setScanProgress(null)
         }
       }
     }
@@ -112,20 +130,24 @@ export function AppProvider({ children }) {
 
   const scan = useCallback(async () => {
     setScanning(true)
-    setScanProgress(null)
     try {
       const res = await api.scanLibrary()
       if (res) {
-        setLibrary(res.animes)
-        showToast(
-          `扫描完成：新增 ${res.added || 0} 部，更新 ${res.updated || 0} 部${res.removed ? `，移除 ${res.removed} 部` : ''}`,
-          'success'
-        )
+        // P5：与后台自动扫描互斥——已有扫描在进行时主进程返回 skipped，
+        // 不覆盖当前库数据，仅提示稍候（进度由先发起的那次扫描负责刷新）
+        if (res.skipped) {
+          showToast('已有扫描正在进行，请稍候', 'info')
+        } else {
+          setLibrary(res.animes)
+          showToast(
+            `扫描完成：新增 ${res.added || 0} 部，更新 ${res.updated || 0} 部${res.removed ? `，移除 ${res.removed} 部` : ''}`,
+            'success'
+          )
+        }
       }
       return res
     } finally {
       setScanning(false)
-      setScanProgress(null)
     }
   }, [showToast])
 
@@ -221,7 +243,6 @@ export function AppProvider({ children }) {
       settings,
       loading,
       scanning,
-      scanProgress,
       version,
       refresh,
       scan,
@@ -247,7 +268,6 @@ export function AppProvider({ children }) {
       settings,
       loading,
       scanning,
-      scanProgress,
       version,
       t,
       refresh,
@@ -271,7 +291,8 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={value}>
-      {children}
+      {/* P5：进度高频更新被隔离在 ScanProgressProvider 内，不触发 AppContext 消费者重渲染 */}
+      <ScanProgressProvider>{children}</ScanProgressProvider>
       <Toasts toasts={toasts} dismiss={dismissToast} />
     </AppContext.Provider>
   )

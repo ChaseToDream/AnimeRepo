@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { Component, useState } from 'react'
 import { Routes, Route, Outlet, NavLink, useLocation } from 'react-router-dom'
-import { AppProvider, useApp } from './store/AppContext'
+import { AppProvider, useApp, useScanProgress } from './store/AppContext'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import Library from './pages/Library'
@@ -9,25 +9,82 @@ import Player from './pages/Player'
 import Stats from './pages/Stats'
 import Settings from './pages/Settings'
 
+// P6：全局 Error Boundary——渲染期未捕获异常原先会卸载整棵 React 树，
+// 窗口只剩白屏且无法恢复（本次白屏卡死的放大器）。兜底为可见的错误页 + 一键刷新。
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            background: 'var(--bg-base, #0d0d12)',
+            color: 'var(--text-1, #e8e8ea)',
+            fontSize: 14
+          }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 600 }}>界面出现了一个错误</div>
+          <div style={{ opacity: 0.7, maxWidth: 520, textAlign: 'center', wordBreak: 'break-all' }}>
+            {String(this.state.error?.message || this.state.error)}
+          </div>
+          <button
+            className="ds-btn ds-btn--brand"
+            onClick={() => window.location.reload()}
+            style={{ marginTop: 8 }}
+          >
+            重新加载
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// P5：扫描进度文案叶子组件——整个应用唯一订阅 ScanProgressContext 的组件。
+// 进度事件以 10Hz 高频推送，若由 ShellLayout 订阅，其子树（Sidebar/Library 等）
+// 会跟着全树重渲染；下沉到叶子组件后每次进度更新只重渲染这一段文本。
+function ScanStatusText() {
+  const { t } = useApp()
+  const scanProgress = useScanProgress()
+  if (!scanProgress) return t('status.scanning')
+  if (scanProgress.phase === 'metadata')
+    return t('status.metadata', { c: scanProgress.current, t: scanProgress.total })
+  return t('status.found', { n: scanProgress.found })
+}
+
 // 带侧边栏的外壳布局（番剧库 / 统计 / 设置）
 function ShellLayout({ onFilterChange, activeFilter }) {
-  const { library, settings, scanning, scanProgress, t } = useApp()
+  const { library, settings, scanning, t } = useApp()
   const location = useLocation()
   const totalEpisodes = library.reduce((n, a) => n + (a.episodes?.length || 0), 0)
   const isStats = location.pathname.startsWith('/stats')
   const isSettings = location.pathname.startsWith('/settings')
-  // O4：扫描状态文案（收集 / 元数据阶段分别展示）
-  const scanText = scanning
-    ? scanProgress
-      ? scanProgress.phase === 'metadata'
-        ? t('status.metadata', { c: scanProgress.current, t: scanProgress.total })
-        : t('status.found', { n: scanProgress.found })
-      : t('status.scanning')
-    : isSettings
-      ? t('status.settings')
-      : isStats
-        ? t('status.stats')
-        : t('status.library')
+  // O4：扫描状态文案（扫描中显示进度，否则显示当前页面名）
+  const scanText = scanning ? (
+    <ScanStatusText />
+  ) : isSettings ? (
+    t('status.settings')
+  ) : isStats ? (
+    t('status.stats')
+  ) : (
+    t('status.library')
+  )
 
   return (
     <div className="app-shell">
@@ -101,8 +158,9 @@ function App() {
   }
 
   return (
-    <AppProvider>
-      <Routes>
+    <ErrorBoundary>
+      <AppProvider>
+        <Routes>
         <Route path="/" element={<ShellLayout activeFilter={filter.status} onFilterChange={handleFilterChange} />}>
           <Route index element={<Library filter={filter} setFilter={setFilter} />} />
           <Route path="stats" element={<Stats />} />
@@ -110,8 +168,9 @@ function App() {
         </Route>
         <Route path="/anime/:id" element={<Detail />} />
         <Route path="/player/:animeId/:epId" element={<Player />} />
-      </Routes>
-    </AppProvider>
+        </Routes>
+      </AppProvider>
+    </ErrorBoundary>
   )
 }
 

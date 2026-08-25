@@ -12,17 +12,31 @@ export function getCoverDir() {
   return join(app.getPath('userData'), 'covers')
 }
 
+// P5：目录创建结果缓存——原先每个新番剧封面都执行一次 mkdirSync + existsSync，
+// 大库首扫时高频同步 I/O 阻塞主进程；改为进程内只创建一次，其余调用直接复用
+let coverDirReady = null
+
 // 下载并缓存封面，返回本地 anime://cover URL；失败或非网络图返回原值
 export async function cacheCover(coverUrl) {
   if (!coverUrl || /^anime:\/\//.test(coverUrl)) return coverUrl
   try {
     const dir = getCoverDir()
-    fs.mkdirSync(dir, { recursive: true })
+    if (!coverDirReady) {
+      coverDirReady = fs.promises.mkdir(dir, { recursive: true }).catch(() => {})
+    }
+    await coverDirReady
     const hash = crypto.createHash('md5').update(coverUrl).digest('hex')
     const extMatch = coverUrl.split('?')[0].match(COVER_EXTS)
     const ext = extMatch ? extMatch[0] : '.jpg'
     const file = join(dir, hash + ext)
-    if (!fs.existsSync(file)) {
+    let cached = false
+    try {
+      await fs.promises.access(file)
+      cached = true
+    } catch {
+      cached = false
+    }
+    if (!cached) {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 10000)
       let res
