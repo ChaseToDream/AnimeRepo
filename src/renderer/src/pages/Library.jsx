@@ -343,11 +343,17 @@ export default function Library({ filter, setFilter }) {
   }
   const confirmBatchTags = async (text) => {
     setTagsDialogOpen(false)
-    const tags = (text || '')
+    // O-9：去重后再写入，并提示合并了多少个重复标签
+    const raw = (text || '')
       .split(/[,，\s]+/)
       .map((s) => s.trim())
       .filter(Boolean)
-    if (tags.length) await runBatch('set-tags', { tags })
+    const tags = [...new Set(raw)]
+    if (!tags.length) return
+    if (tags.length !== raw.length) {
+      showToast(`已合并 ${raw.length - tags.length} 个重复标签`, 'info')
+    }
+    await runBatch('set-tags', { tags })
   }
   // 已有标签集合（供标签输入对话框补全建议）
   const allTags = useMemo(
