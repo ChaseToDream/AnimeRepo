@@ -34,7 +34,9 @@ function notify(title, body, clickPath) {
   n.show()
 }
 
-async function runOnce() {
+// F-2：文件监控（fileWatcher）也复用此入口——事件触发一次自动扫描，
+// syncing 标志保证与定时同步/手动扫描互斥，不会并发双跑
+export async function runOnce() {
   const settings = store.getSettings()
   if (syncing || !settings.autoScanOnStartup) return
   const folders = settings.libraryFolders || []

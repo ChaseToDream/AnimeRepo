@@ -8,6 +8,7 @@ import { VIDEO_EXT } from './scanner'
 import { getCoverDir, cleanupUnusedCovers } from './coverCache'
 import { startAutoSync, stopAutoSync } from './autosync'
 import { startWebServer, stopWebServer } from './webServer'
+import { startFileWatch, stopFileWatch } from './fileWatcher'
 
 // 自定义协议：anime://local/<base64path> 用于安全加载本地视频
 protocol.registerSchemesAsPrivileged([
@@ -144,6 +145,9 @@ app.whenReady().then(() => {
   // F-4：局域网播放服务（按设置自动启停；默认关闭）
   if (getSettings().webServerEnabled) startWebServer()
 
+  // F-2：媒体库文件夹文件监控（按设置启停；默认开启）
+  if (getSettings().fileWatchEnabled) startFileWatch()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -165,4 +169,6 @@ app.on('will-quit', () => {
   stopAutoSync()
   // F-4：退出时关闭局域网播放服务
   stopWebServer()
+  // F-2：退出时关闭文件监控
+  stopFileWatch()
 })

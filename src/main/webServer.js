@@ -12,6 +12,7 @@ import path from 'path'
 import { resolve, sep } from 'path'
 import crypto from 'crypto'
 import { getSettings, updateSettings, list } from './store'
+import { getCoverDir } from './coverCache'
 
 const VIDEO_MIME = {
   '.mp4': 'video/mp4',
@@ -143,19 +144,106 @@ export function getWebInfo() {
 }
 
 // —— 静态页面 ——
+// F-8：从 anime.coverUrl 提取本地封面缓存文件名（anime://cover/<base64> → hash.ext），
+// 供局域网页 /cover 端点引用；非本地封面（网络图）不提供缩略图
+function localCoverFileName(anime) {
+  const u = anime && anime.coverUrl
+  if (typeof u === 'string' && u.startsWith('anime://cover/')) {
+    return u.slice('anime://cover/'.length) // 本身即 hash.ext 的 base64url
+  }
+  return ''
+}
+
 // 收集全部可播放视频条目（可按标题过滤）
 function buildItems(filter) {
   const items = []
   const q = String(filter || '').trim().toLowerCase()
   for (const a of list()) {
     const title = a.title || ''
+    const c = localCoverFileName(a)
     for (const e of a.episodes || []) {
       if (!e.filePath) continue
       if (q && !title.toLowerCase().includes(q)) continue
-      items.push({ t: title, n: e.number, f: e.filePath })
+      items.push({ t: title, n: e.number, f: e.filePath, c })
     }
   }
   return items
+}
+
+// F-8：在视频同目录查找同名字幕（srt/ass/ssa/vtt），返回路径；无则空串
+function findSubtitleFor(videoFile) {
+  try {
+    const dir = path.dirname(videoFile)
+    if (!fs.existsSync(dir)) return ''
+    const base = path.basename(videoFile, path.extname(videoFile)).toLowerCase()
+    for (const name of fs.readdirSync(dir)) {
+      const ext = path.extname(name).toLowerCase()
+      if (ext !== '.srt' && ext !== '.ass' && ext !== '.ssa' && ext !== '.vtt') continue
+      if (path.basename(name, ext).toLowerCase() === base) return path.join(dir, name)
+    }
+    return ''
+  } catch (e) {
+    return ''
+  }
+}
+
+// F-8：字幕 → WebVTT 文本（支持 SRT / ASS / SSA；VTT 原样返回）
+function subtitleToVtt(subPath) {
+  let text
+  try {
+    text = fs.readFileSync(subPath, 'utf-8')
+  } catch (e) {
+    return ''
+  }
+  if (!text) return ''
+  const clean = String(text).replace(/^\uFEFF/, '')
+  if (/^WEBVTT/.test(clean)) return clean
+  const normTime = (s) => {
+    const p = String(s).split(':')
+    const h = p.length === 3 ? p[0].padStart(2, '0') : '00'
+    const m = (p.length === 3 ? p[1] : p[0]).padStart(2, '0')
+    const rest = p.length === 3 ? p[2] : p[1]
+    const [ss, ms] = String(rest).split('.')
+    return `${h}:${m}:${(ss || '0').padStart(2, '0')}.${(ms || '0').padEnd(3, '0').slice(0, 3)}`
+  }
+  // ASS / SSA：提取 Dialogue 纯文本
+  if (/^Dialogue:|^\[Events\]/m.test(clean)) {
+    const out = ['WEBVTT']
+    let inEvents = false
+    for (const line of clean.split(/\r?\n/)) {
+      if (/^\[Events\]/i.test(line)) { inEvents = true; continue }
+      if (inEvents && /^\[/.test(line)) inEvents = false
+      if (!inEvents) continue
+      const m = /^Dialogue:\s*[^,]*,\s*([\d:.]+),\s*([\d:.]+),\s*([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$/.exec(line)
+      if (!m) continue
+      const body = m[9].replace(/\{[^}]*\}/g, '').replace(/\\N/g, '\n').trim()
+      if (!body) continue
+      out.push('', `${normTime(m[1])} --> ${normTime(m[2])}`, body)
+    }
+    return out.join('\n')
+  }
+  // SRT
+  return 'WEBVTT\n\n' + clean
+    .replace(/\r\n/g, '\n')
+    .replace(/(\d{1,2}):(\d{2}):(\d{2}),(\d{1,3})/g, '$1:$2:$3.$4')
+}
+
+// F-8：字幕文件边界校验（媒体库文件夹内 + 字幕扩展名）
+function isAllowedSubtitle(filePath) {
+  try {
+    if (!filePath) return false
+    const folders = getSettings().libraryFolders || []
+    if (!folders.length) return false
+    const resolved = resolve(filePath)
+    const inFolder = folders.some((f) => {
+      const base = resolve(f)
+      return resolved === base || resolved.startsWith(base + sep)
+    })
+    if (!inFolder) return false
+    return ['.srt', '.ass', '.ssa', '.vtt', '.sub'].includes(path.extname(filePath).toLowerCase())
+  } catch (e) {
+    return false
+  }
 }
 
 // P-12：列表页首屏内嵌的条目上限（超大型媒体库防传输与 DOM 膨胀）；搜索接口同上限
@@ -200,11 +288,24 @@ function indexHtml(token) {
     ul.innerHTML = '';
     (items || []).forEach(function(it){
       const li = document.createElement('li');
+      li.style.cssText = 'display:flex;align-items:center;gap:10px';
+      if (it.c) {
+        const im = document.createElement('img');
+        im.style.cssText = 'width:40px;height:56px;object-fit:cover;border-radius:6px;flex-shrink:0;background:#1c1d22';
+        im.src = '/cover/' + TOK + '/' + it.c;
+        im.onerror = function(){ this.style.display = 'none'; };
+        li.appendChild(im);
+      }
+      const box = document.createElement('div');
+      box.style.cssText = 'flex:1;min-width:0';
       const t = document.createElement('div'); t.className = 't';
       t.textContent = (it.n > 0 ? '#' + String(it.n).padStart(2,'0') + ' ' : '') + it.t;
+      t.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       const m = document.createElement('div'); m.className = 'm';
       m.textContent = (it.f || '').split(/[\\\\/]/).pop();
-      li.appendChild(t); li.appendChild(m);
+      m.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      box.appendChild(t); box.appendChild(m);
+      li.appendChild(box);
       li.addEventListener('click', function(){ window.open('/page/' + TOK + '/' + b64u(it.f), '_blank'); });
       ul.appendChild(li);
     });
@@ -232,10 +333,14 @@ function indexHtml(token) {
 </html>`
 }
 
-// 单集播放页
+// 单集播放页（F-8：同目录存在字幕时附带 <track> 显示字幕）
 function playerHtml(token, filePath) {
   const name = path.basename(filePath)
   const b64 = Buffer.from(filePath, 'utf-8').toString('base64url')
+  const sub = findSubtitleFor(filePath)
+  const subTrack = sub
+    ? `\n<track kind="subtitles" label="字幕" src="/sub/${token}/${Buffer.from(sub, 'utf-8').toString('base64url')}" default>`
+    : ''
   return `<!doctype html>
 <html lang="zh">
 <head>
@@ -245,10 +350,12 @@ function playerHtml(token, filePath) {
 <style>
   html,body{margin:0;background:#000}
   video{width:100vw;height:100vh;display:block;background:#000}
+  video::cue{font-size:1.1em;background:rgba(0,0,0,0.6)}
 </style>
 </head>
 <body>
-<video controls autoplay src="/stream/${token}/${b64}"></video>
+<video controls autoplay src="/stream/${token}/${b64}">${subTrack}
+</video>
 </body>
 </html>`
 }
@@ -342,6 +449,44 @@ function handleRequest(req, res) {
   if (kind === 'stream' && seg.length === 3) {
     const filePath = b64decode(seg[2])
     serveVideo(req, res, filePath)
+    return
+  }
+  // F-8：字幕 → WebVTT（媒体库内 + 字幕扩展名校验）
+  if (kind === 'sub' && seg.length === 3) {
+    const subPath = b64decode(seg[2])
+    if (!isAllowedSubtitle(subPath)) {
+      sendText(res, 403, 'forbidden', 'text/plain')
+      return
+    }
+    const vtt = subtitleToVtt(subPath)
+    if (!vtt) {
+      sendText(res, 404, 'not found', 'text/plain')
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Cache-Control': 'no-store' })
+    res.end(vtt)
+    return
+  }
+  // F-8：本地封面缓存文件（hash.ext 白名单校验，防目录穿越）
+  if (kind === 'cover' && seg.length === 3) {
+    const name = b64decode(seg[2])
+    if (!name || !/^[A-Za-z0-9_-]+\.(jpe?g|png|webp|gif)$/i.test(name)) {
+      sendText(res, 403, 'forbidden', 'text/plain')
+      return
+    }
+    const file = path.join(getCoverDir(), name)
+    try {
+      if (!fs.existsSync(file)) {
+        sendText(res, 404, 'not found', 'text/plain')
+        return
+      }
+      const ext = path.extname(name).toLowerCase()
+      const mime = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' }[ext] || 'application/octet-stream'
+      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'max-age=86400' })
+      fs.createReadStream(file).pipe(res)
+    } catch (e) {
+      sendText(res, 500, 'error', 'text/plain')
+    }
     return
   }
   sendText(res, 404, 'not found', 'text/plain')

@@ -230,6 +230,13 @@ export function AppProvider({ children }) {
     setLibrary((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
+  // F-7：手动添加“想看”占位条目（追加到库尾）
+  const createAnime = useCallback(async (title) => {
+    const created = await api.createAnime(title)
+    if (created) setLibrary((prev) => [...prev, created])
+    return created
+  }, [])
+
   // N4：批量操作（PF-02：主进程返回增量，本地合并）
   // mark-watched 会在主进程追加观看日志，完成后刷新历史
   // UX-3：可撤销的批量操作（标记已看/未看、设状态、收藏、设标签）在改动前
@@ -388,6 +395,7 @@ export function AppProvider({ children }) {
       getAnime,
       updateAnime,
       removeAnime,
+      createAnime,
       batchAnime,
       mergeAnime,
       splitAnime,
@@ -418,6 +426,7 @@ export function AppProvider({ children }) {
       getAnime,
       updateAnime,
       removeAnime,
+      createAnime,
       batchAnime,
       mergeAnime,
       splitAnime,

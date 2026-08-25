@@ -7,8 +7,9 @@ import * as store from './store'
 import { scanLibrary, rebuildDatabase, makeEpisodeId } from './scanner'
 import { titleKey } from './parser'
 import { saveLocalCover, cacheCover } from './coverCache'
-import { fetchAiringSchedule, fetchOnline } from './metadata'
+import { fetchAiringSchedule, fetchOnline, offlineDefaults } from './metadata'
 import { getWebInfo, startWebServer, stopWebServer, resetToken } from './webServer'
+import { restartFileWatch } from './fileWatcher'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
 
@@ -114,6 +115,39 @@ export function registerIpc() {
     return store.updateAnime(id, patch)
   })
   ipcMain.handle('anime:remove', (_e, id) => store.remove(id))
+
+  // —— F-7：手动添加“想看”占位条目（无剧集文件，供追更/占位） ——
+  ipcMain.handle('anime:create', (_e, title) => {
+    const t = String(title || '').trim()
+    if (!t) return null
+    const id = 'anime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
+    const info = offlineDefaults(t, 1, 0)
+    const now = new Date().toISOString()
+    return store.upsert({
+      id,
+      titleKey: titleKey(t),
+      title: t,
+      englishTitle: '',
+      romaji: '',
+      description: '',
+      genres: [],
+      tags: [],
+      rating: 0,
+      status: 'plan',
+      year: new Date().getFullYear(),
+      airDate: '',
+      studio: '',
+      voiceActors: [],
+      coverUrl: '',
+      coverGradient: info.coverGradient,
+      seasons: [1],
+      aired: 0,
+      episodes: [],
+      path: '',
+      createdAt: now,
+      updatedAt: now
+    })
+  })
 
   // —— 批量操作（N4）——
   // PF-02：返回增量 { upserts, removedIds }（原先返回全量 store.list()，
@@ -271,7 +305,14 @@ export function registerIpc() {
 
   // —— 设置 ——
   ipcMain.handle('settings:get', () => store.getSettings())
-  ipcMain.handle('settings:update', (_e, patch) => store.updateSettings(patch))
+  ipcMain.handle('settings:update', (_e, patch) => {
+    const next = store.updateSettings(patch)
+    // F-2：文件监控开关或媒体库文件夹列表变化时，按新设置重启监控
+    if (patch && (Object.prototype.hasOwnProperty.call(patch, 'fileWatchEnabled') || Object.prototype.hasOwnProperty.call(patch, 'libraryFolders'))) {
+      restartFileWatch()
+    }
+    return next
+  })
   ipcMain.handle('settings:add-folder', async (_e) => {
     const settings = store.getSettings()
     const res = await dialog.showOpenDialog({ properties: ['openDirectory'] })

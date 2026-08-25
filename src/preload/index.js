@@ -40,6 +40,8 @@ const api = {
   fetchCalendar: () => ipcRenderer.invoke('calendar:fetch'),
   updateAnime: (id, patch) => ipcRenderer.invoke('anime:update', id, patch),
   removeAnime: (id) => ipcRenderer.invoke('anime:remove', id),
+  // F-7：手动添加“想看”占位条目
+  createAnime: (title) => ipcRenderer.invoke('anime:create', title),
   batchAnime: (op) => ipcRenderer.invoke('anime:batch', op),
   mergeAnime: (fromId, toId) => ipcRenderer.invoke('anime:merge', fromId, toId),
   splitAnime: (fromId, epIds, newTitle) => ipcRenderer.invoke('anime:split', fromId, epIds, newTitle),

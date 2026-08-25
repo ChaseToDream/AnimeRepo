@@ -20,6 +20,7 @@ const DEFAULTS = {
   externalPlayerPath: '',
   defaultPlaySpeed: 1.0,
   subtitleFontSize: 'medium',
+  fileWatchEnabled: true,
   subtitleFont: '思源黑体',
   subtitleStroke: true,
   subtitleBottomMargin: 60,
@@ -344,6 +345,12 @@ export default function Settings() {
                     title="扫描时清理失效条目"
                     desc="移除磁盘上已删除番剧的条目；关闭后扫描仅新增/更新，不清理旧数据"
                     control={<Switch checked={settings.cleanupOnScan} onChange={(v) => set({ cleanupOnScan: v })} />}
+                  />
+                  {/* F-2：媒体库文件夹文件监控 */}
+                  <SettingRow
+                    title="监控文件变化自动同步"
+                    desc="库文件夹内新增/删除/改名文件时自动触发扫描（无需等待定时同步）"
+                    control={<Switch checked={settings.fileWatchEnabled} onChange={(v) => set({ fileWatchEnabled: v })} />}
                   />
                   <SettingRow
                     title="扫描深度"

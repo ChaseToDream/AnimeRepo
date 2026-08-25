@@ -39,6 +39,8 @@ const DEFAULT_SETTINGS = {
   uiLanguage: '简体中文',
   dateFormat: 'YYYY-MM-DD',
   ratingSystem: '10分制',
+  // F-2：媒体库文件夹文件监控（新增/删除/改名自动触发扫描）
+  fileWatchEnabled: true,
   // F-4：局域网播放（默认关闭；token 由 webServer 首次启动时生成并持久化）
   webServerEnabled: false,
   webServerPort: 39282,
@@ -85,6 +87,8 @@ const SETTING_SCHEMA = {
   uiLanguage: { string: true },
   dateFormat: { enum: ['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] },
   ratingSystem: { enum: ['10分制', '5星制', '百分制'] },
+  // F-2：文件监控开关
+  fileWatchEnabled: { boolean: true },
   // F-4：局域网播放设置
   webServerEnabled: { boolean: true },
   webServerPort: { number: true, min: 1, max: 65535, int: true },

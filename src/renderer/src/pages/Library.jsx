@@ -64,7 +64,7 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning, batchAnime, undoLastBatch, showToast, addFolder, settings, updateAnime, api, loading } = useApp()
+  const { library, scan, scanning, batchAnime, undoLastBatch, showToast, addFolder, settings, updateAnime, api, loading, createAnime } = useApp()
   const navigate = useNavigate()
   // UX-04：视图/排序从上次会话恢复（默认网格 + 添加时间）
   const [uiPrefs] = useState(loadUiPrefs)
@@ -75,6 +75,8 @@ export default function Library({ filter, setFilter }) {
   const [selected, setSelected] = useState(() => new Set())
   // B-03：应用内对话框状态（替换原生 confirm / 不受支持的 window.prompt）
   const [tagsDialogOpen, setTagsDialogOpen] = useState(false)
+  // F-7：手动添加“想看”占位条目的输入对话框
+  const [addOpen, setAddOpen] = useState(false)
   // 删除确认目标（批量 = 选中集合；单个 = 右键菜单目标）
   const [removeTarget, setRemoveTarget] = useState(null)
   // UX-02：右键菜单状态 { x, y, anime }
@@ -394,6 +396,12 @@ export default function Library({ filter, setFilter }) {
             {selectionMode ? '取消选择' : '多选'}
           </button>
 
+          {/* F-7：手动添加“想看”占位条目 */}
+          <button className="ds-btn ds-btn--secondary ds-btn--sm" onClick={() => setAddOpen(true)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="icon"><path d="M12 5v14M5 12h14" /></svg>
+            添加想看
+          </button>
+
           <button
             className="ds-btn ds-btn--brand ds-btn--sm"
             onClick={() => scan()}
@@ -707,6 +715,21 @@ export default function Library({ filter, setFilter }) {
         suggestions={allTags.slice(0, 30)}
         onConfirm={confirmBatchTags}
         onCancel={() => setTagsDialogOpen(false)}
+      />
+      {/* F-7：手动添加“想看”占位条目 */}
+      <PromptDialog
+        open={addOpen}
+        title="添加想看"
+        label="输入番剧标题"
+        placeholder="例如：进击的巨人 最终季"
+        onConfirm={async (text) => {
+          setAddOpen(false)
+          const title = (text || '').trim()
+          if (!title) return
+          const created = await createAnime(title)
+          showToast(created ? `已添加「${created.title}」到想看` : '添加失败', created ? 'success' : 'error')
+        }}
+        onCancel={() => setAddOpen(false)}
       />
 
       {/* UX-02：右键上下文菜单 */}
