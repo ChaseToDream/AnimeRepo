@@ -61,6 +61,7 @@ export default function Library({ filter, setFilter }) {
         return false
       }
       if (filter.genre && !(a.genres || []).includes(filter.genre)) return false
+      if (filter.tag && !(a.tags || []).includes(filter.tag)) return false
       if (q) {
         const title = (a.title || '').toLowerCase()
         const desc = (a.description || '').toLowerCase()
@@ -68,7 +69,7 @@ export default function Library({ filter, setFilter }) {
       }
       return true
     })
-  }, [library, filter.status, filter.genre, q])
+  }, [library, filter.status, filter.genre, filter.tag, q])
 
   // U5：排序（最近观看按时间倒序，其余按所选维度）
   const sortedItems = useMemo(() => {

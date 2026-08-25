@@ -20,6 +20,13 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
     for (const g of a.genres || []) m[g] = (m[g] || 0) + 1
     return m
   }, {})
+  // 1.3：标签集合（按数量降序，用于标签筛选）
+  const tagList = Object.entries(
+    library.reduce((m, a) => {
+      for (const t of a.tags || []) m[t] = (m[t] || 0) + 1
+      return m
+    }, {})
+  ).sort((a, b) => b[1] - a[1])
 
   const navigateTo = (route) => navigate(route)
 
@@ -129,6 +136,27 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
             </span>
           ))}
             {genreSet.length === 0 && <span className="text-tertiary" style={{ fontSize: 10 }}>{t('nav.emptyGenres')}</span>}
+          </div>
+        </div>
+
+        <div className="ds-navlist__group">
+          <div className="ds-navlist__group-title">{t('nav.tags')}</div>
+          <div className="ds-navlist__genres">
+            {tagList.slice(0, 8).map(([t, count]) => (
+              <span
+                key={t}
+                className="ds-navlist__genre-tag"
+                onClick={() => {
+                  setSection('library')
+                  navigate('/')
+                  onFilterChange?.('tag', t)
+                }}
+              >
+                {t}
+                <span className="ds-navlist__badge">{count}</span>
+              </span>
+            ))}
+            {tagList.length === 0 && <span className="text-tertiary" style={{ fontSize: 10 }}>{t('nav.emptyTags')}</span>}
           </div>
         </div>
       </nav>

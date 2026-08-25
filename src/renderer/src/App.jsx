@@ -86,11 +86,13 @@ function ShellLayout({ onFilterChange, activeFilter }) {
 }
 
 function App() {
-  const [filter, setFilter] = useState({ status: 'all', genre: '', query: '' })
+  const [filter, setFilter] = useState({ status: 'all', genre: '', query: '', tag: '' })
   const handleFilterChange = (passedKey, passedValue) => {
     // Sidebar 回调：onFilterChange(filterKey, queryOrGenre)
     if (passedValue && passedKey === 'genre') {
       setFilter({ ...filter, genre: passedValue, status: 'all' })
+    } else if (passedValue && passedKey === 'tag') {
+      setFilter({ ...filter, tag: passedValue, status: 'all' })
     } else if (passedValue) {
       setFilter({ ...filter, query: passedValue })
     } else {

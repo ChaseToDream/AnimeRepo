@@ -25,7 +25,7 @@ const TABS = [
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { library, getAnime, updateAnime, setWatched, mergeAnime, splitAnime, showToast, settings } = useApp()
+  const { library, getAnime, updateAnime, setWatched, mergeAnime, splitAnime, batchAnime, showToast, settings } = useApp()
 
   const anime = getAnime(id)
 
@@ -298,6 +298,26 @@ export default function Detail() {
                         第 {s} 季
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {episodes.length > 0 && (
+                  <div className="episode-batchbar">
+                    <span className="episode-batchbar__count">共 {totalEpisodes} 集 · 已看 {watchedCount} 集</span>
+                    <div className="episode-batchbar__actions">
+                      <button
+                        className="ds-btn ds-btn--sm ds-btn--secondary"
+                        onClick={() => { batchAnime('mark-watched', [anime.id]); showToast('已全部标记为已看', 'success') }}
+                      >
+                        全部标记已看
+                      </button>
+                      <button
+                        className="ds-btn ds-btn--sm ds-btn--secondary"
+                        onClick={() => { batchAnime('mark-unwatched', [anime.id]); showToast('已全部标记为未看', 'success') }}
+                      >
+                        全部标记未看
+                      </button>
+                    </div>
                   </div>
                 )}
 

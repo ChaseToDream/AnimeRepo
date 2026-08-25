@@ -119,6 +119,7 @@ export default function Player() {
   const [autoNext, setAutoNext] = useState(settings?.autoNextEpisode ?? true)
   const [skipOpEd, setSkipOpEd] = useState(settings?.skipOpEd ?? true)
   const [subSize, setSubSize] = useState(settings?.subtitleFontSize || 'medium')
+  const [subFont, setSubFont] = useState(settings?.subtitleFont || '思源黑体')
   const [audioGain, setAudioGain] = useState(100)
   const [audioDelay, setAudioDelay] = useState(0)
 
@@ -790,8 +791,12 @@ export default function Player() {
                       </div>
                       <div className="setting-row">
                         <span className="setting-row__label">字幕字体</span>
-                        <span className="setting-select">思源黑体</span>
-                        <span className="setting-row__soon">即将支持</span>
+                        <select className="setting-select" value={subFont} onChange={(e) => { setSubFont(e.target.value); persist({ subtitleFont: e.target.value }) }} aria-label="字幕字体">
+                          <option value="思源黑体">思源黑体</option>
+                          <option value="微软雅黑">微软雅黑</option>
+                          <option value="苹方">苹方</option>
+                          <option value="Noto Sans CJK">Noto Sans CJK</option>
+                        </select>
                       </div>
                       <div className="setting-row">
                         <span className="setting-row__label">字幕颜色</span>

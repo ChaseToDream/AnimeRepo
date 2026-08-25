@@ -234,6 +234,27 @@
   flex-wrap: wrap;
   padding: var(--spacer-16) 0 var(--spacer-24);
 }
+
+/* 剧集批量操作条（全部标记已看/未看） */
+.episode-batchbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-12);
+  padding: var(--spacer-8) var(--spacer-12);
+  margin-bottom: var(--spacer-8);
+  background: var(--bg-overlay-l1);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-6);
+}
+.episode-batchbar__count {
+  font-size: var(--body-sm-font-size);
+  color: var(--text-tertiary);
+}
+.episode-batchbar__actions {
+  display: flex;
+  gap: var(--spacer-8);
+}
 .season-btn {
   padding: var(--spacer-6) var(--spacer-12);
   height: 28px;

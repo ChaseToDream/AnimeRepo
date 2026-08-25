@@ -169,7 +169,7 @@ export default function Stats() {
           <div className="stats-panel">
             <div className="stats-panel__header">
               <h2 className="stats-panel__title">近 7 天观看活动</h2>
-              <span className="stats-panel__hint">单位：次</span>
+              <span className="stats-panel__hint">按最近观看日期计番剧数</span>
             </div>
             <div className="stats-chart-container">
               <div className="stats-chart__yaxis">

@@ -65,8 +65,13 @@ function findSubtitles(videoFile, folder, dirCache) {
 async function walkFiles(root, options, onFile) {
   const { maxDepth, isVideo } = options || {}
   const stack = [{ dir: root, depth: 0 }]
+  // Bug 6：已访问目录去重（realpath 解析符号链接/junction），防止目录结构指向祖先时无限遍历
+  const visited = new Set()
   while (stack.length) {
     const { dir, depth } = stack.pop()
+    const key = await fs.promises.realpath(dir).catch(() => dir)
+    if (visited.has(key)) continue
+    visited.add(key)
     let entries
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true })
