@@ -43,6 +43,9 @@ const api = {
   // F-7：手动添加“想看”占位条目
   createAnime: (title) => ipcRenderer.invoke('anime:create', title),
   batchAnime: (op) => ipcRenderer.invoke('anime:batch', op),
+  // F-9：标签管理（合并/重命名/删除）
+  replaceTag: (oldTag, newTag) => ipcRenderer.invoke('anime:replace-tag', oldTag, newTag),
+  removeTag: (tag) => ipcRenderer.invoke('anime:remove-tag', tag),
   mergeAnime: (fromId, toId) => ipcRenderer.invoke('anime:merge', fromId, toId),
   splitAnime: (fromId, epIds, newTitle) => ipcRenderer.invoke('anime:split', fromId, epIds, newTitle),
   setProgress: (animeId, epId, seconds, duration) =>
@@ -59,6 +62,8 @@ const api = {
   importData: () => ipcRenderer.invoke('data:import'),
   rebuildDatabase: () => ipcRenderer.invoke('data:rebuild'),
   resetData: () => ipcRenderer.invoke('data:reset'),
+  // UX-14：数据文件最后修改时间
+  getDataLastSaved: () => ipcRenderer.invoke('data:last-saved'),
   // —— 系统 ——
   openFolder: (p) => ipcRenderer.invoke('shell:open-folder', p),
   getVersion: () => ipcRenderer.invoke('app:version'),
@@ -80,6 +85,8 @@ const api = {
   setAnimeCover: (id, filePath) => ipcRenderer.invoke('anime:set-cover', id, filePath),
   // —— O-2：在线元数据手动刷新 ——
   refreshAnimeMetadata: (id) => ipcRenderer.invoke('anime:refresh-metadata', id),
+  // —— O-10：批量补全元数据（不传 ids 时自动选择缺失封面/简介的条目） ——
+  batchRefreshMetadata: (ids) => ipcRenderer.invoke('anime:batch-refresh-metadata', ids),
   // —— 字幕 ——
   readSubtitle: (filePath) => ipcRenderer.invoke('subtitle:read', filePath),
   // —— 窗口控制 ——

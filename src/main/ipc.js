@@ -133,6 +133,39 @@ export function registerIpc() {
     return { ok: true, anime }
   })
 
+  // —— F-9：标签管理（合并/重命名/删除）——
+  // 统一实现：把 targetTag 全量替换为 nextTag（空串=删除）；命中标签的条目
+  // 批量写库（save 防抖合并，仅一次落盘）
+  function applyTagRename(targetTag, nextTag) {
+    const upserts = []
+    for (const a of store.list()) {
+      const tags = a.tags || []
+      if (!tags.includes(targetTag)) continue
+      let next
+      if (nextTag) {
+        next = [...tags.filter((t) => t !== targetTag && t !== nextTag), nextTag]
+      } else {
+        next = tags.filter((t) => t !== targetTag)
+      }
+      const updated = store.updateAnime(a.id, { tags: next })
+      if (updated) upserts.push(updated)
+    }
+    return upserts
+  }
+  // 重命名 / 合并：oldTag → newTag
+  ipcMain.handle('anime:replace-tag', (_e, oldTag, newTag) => {
+    const from = String(oldTag || '').trim()
+    const to = String(newTag || '').trim()
+    if (!from || from === to) return { upserts: [] }
+    return { upserts: applyTagRename(from, to) }
+  })
+  // 删除：从所有条目移除该标签
+  ipcMain.handle('anime:remove-tag', (_e, tag) => {
+    const t = String(tag || '').trim()
+    if (!t) return { upserts: [] }
+    return { upserts: applyTagRename(t, '') }
+  })
+
   // —— 批量操作（N4）——
   // PF-02：返回增量 { upserts, removedIds }（原先返回全量 store.list()，
   // 每次批量操作都经 IPC 传输整个媒体库，大库时为 10MB 级结构化克隆开销）
@@ -345,6 +378,19 @@ export function registerIpc() {
     store.reset()
     return true
   })
+  // UX-14：数据文件最后修改时间（备份意识提示）
+  ipcMain.handle('data:last-saved', () => {
+    try {
+      const p = store.dataPath()
+      if (p && fs.existsSync(p)) {
+        const st = fs.statSync(p)
+        return st.mtimeMs || 0
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return 0
+  })
 
   // —— 系统 ——
   ipcMain.handle('shell:open-folder', (_e, p) => {
@@ -524,6 +570,51 @@ export function registerIpc() {
     // 新封面下载到本地缓存（失败回退原网络 URL，与扫描路径一致）
     if (info.coverUrl) patch.coverUrl = await cacheCover(info.coverUrl)
     return store.updateAnime(id, patch)
+  })
+
+  // —— O-10：批量补全在线元数据 ——
+  // 无 ids 时自动选择「缺封面或简介」的条目；强制跳过缓存重查（Bangumi → AniList），
+  // 并发限流 3；仅覆盖展示字段（同单条刷新），保留标题/标签/评分/进度。
+  ipcMain.handle('anime:batch-refresh-metadata', async (_e, ids) => {
+    const selected = new Set(Array.isArray(ids) ? ids : [])
+    const targets = selected.size
+      ? store.list().filter((a) => selected.has(a.id))
+      : store.list().filter((a) => Boolean(a && (a.title || '').trim()) && (!a.coverUrl || !a.description))
+    if (!targets.length) return { updated: 0, failed: 0, total: 0, upserts: [] }
+    const upserts = []
+    let failed = 0
+    let idx = 0
+    const CONC = 3
+    await Promise.all(
+      Array.from({ length: Math.min(CONC, targets.length) }, async () => {
+        while (idx < targets.length) {
+          const a = targets[idx++]
+          try {
+            const info = await fetchOnline(a.title, { force: true })
+            if (!info || !info.title) {
+              failed++
+              continue
+            }
+            const patch = {
+              englishTitle: info.englishTitle || '',
+              romaji: info.romaji || '',
+              description: info.description || '',
+              genres: info.genres || [],
+              year: info.year || 0,
+              airDate: info.airDate || '',
+              studio: info.studio || '',
+              voiceActors: info.voiceActors || []
+            }
+            if (info.coverUrl) patch.coverUrl = await cacheCover(info.coverUrl)
+            const next = store.updateAnime(a.id, patch)
+            if (next) upserts.push(next)
+          } catch (e) {
+            failed++
+          }
+        }
+      })
+    )
+    return { updated: upserts.length, failed, total: targets.length, upserts }
   })
 
   // —— 字幕 ——

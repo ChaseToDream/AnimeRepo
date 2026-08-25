@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useApp } from '../store/AppContext'
 import { ConfirmDialog } from '../components/Dialog'
 import './Settings.css'
@@ -48,7 +48,7 @@ const NAV_GROUPS = [
   { title: '通用', items: [{ key: 'library', label: '番剧库' }, { key: 'scan', label: '扫描设置' }] },
   { title: '播放', items: [{ key: 'player', label: '播放器' }, { key: 'subtitle', label: '字幕' }, { key: 'audio', label: '音频' }] },
   { title: '界面', items: [{ key: 'appearance', label: '外观' }, { key: 'language', label: '语言' }] },
-  { title: '高级', items: [{ key: 'webserve', label: '局域网播放' }, { key: 'data', label: '数据管理' }, { key: 'about', label: '关于' }] }
+  { title: '高级', items: [{ key: 'webserve', label: '局域网播放' }, { key: 'tags', label: '标签管理' }, { key: 'data', label: '数据管理' }, { key: 'about', label: '关于' }] }
 ]
 
 const SECTION_INFO = {
@@ -60,6 +60,7 @@ const SECTION_INFO = {
   appearance: { title: '外观', desc: '设置应用的主题与界面密度。' },
   language: { title: '语言', desc: '选择界面语言与日期、评分显示格式。' },
   webserve: { title: '局域网播放', desc: '在本机启动只读 HTTP 服务，供局域网设备浏览器观看媒体库视频。' },
+  tags: { title: '标签管理', desc: '统一查看与维护所有番剧标签：重命名 / 合并 / 删除。' },
   data: { title: '数据管理', desc: '导出、导入、重建或重置应用数据。' },
   about: { title: '关于', desc: '应用版本与许可信息。' }
 }
@@ -148,7 +149,7 @@ function EditableTags({ value = [], onChange }) {
 }
 
 export default function Settings() {
-  const { settings, updateSettings, addFolder, removeFolder, refresh, version, api, library, showToast } = useApp()
+  const { settings, updateSettings, addFolder, removeFolder, refresh, version, api, library, showToast, replaceTag, removeTag } = useApp()
   const [activeSection, setActiveSection] = useState('library')
   // B-7：更新源是否已配置（未配置时隐藏「检查更新」入口，避免无意义占位按钮）
   const [updateSourceConfigured, setUpdateSourceConfigured] = useState(true)
@@ -166,6 +167,19 @@ export default function Settings() {
     }
   }, [])
   useEffect(() => { refreshWebInfo() }, [refreshWebInfo])
+  // UX-14：数据文件最后修改时间（备份意识提示）
+  const [lastSavedMs, setLastSavedMs] = useState(0)
+  const refreshSaved = useCallback(() => {
+    api.getDataLastSaved().then((ms) => { if (ms) setLastSavedMs(ms) }).catch(() => {})
+  }, [])
+  useEffect(() => { refreshSaved() }, [refreshSaved])
+  const lastSavedText = useMemo(() => {
+    if (!lastSavedMs) return '未知'
+    const days = Math.floor((Date.now() - lastSavedMs) / 86400000)
+    if (days <= 0) return '今天'
+    if (days === 1) return '昨天'
+    return `${days} 天前`
+  }, [lastSavedMs])
   const toggleWebServer = async (enabled) => {
     const info = await api.setWebServerEnabled(enabled)
     setWebInfo(info)
@@ -189,6 +203,47 @@ export default function Settings() {
   const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [defaultsConfirmOpen, setDefaultsConfirmOpen] = useState(false)
+  // F-9：标签管理（来源 → 目标 输入）
+  const [tagFrom, setTagFrom] = useState('')
+  const [tagTo, setTagTo] = useState('')
+  // UX-12：设置导航搜索（按分区标题/描述过滤）
+  const [navQuery, setNavQuery] = useState('')
+  const navGroups = useMemo(() => {
+    const q = navQuery.trim().toLowerCase()
+    if (!q) return NAV_GROUPS
+    return NAV_GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter((it) => {
+        const info = SECTION_INFO[it.key]
+        return (
+          it.label.toLowerCase().includes(q) ||
+          (info && (info.title.toLowerCase().includes(q) || info.desc.toLowerCase().includes(q)))
+        )
+      })
+    })).filter((g) => g.items.length)
+  }, [navQuery])
+  // F-9：全部标签（按使用次数降序）
+  const tagRows = useMemo(() => {
+    const m = {}
+    for (const a of library) {
+      for (const t of a.tags || []) m[t] = (m[t] || 0) + 1
+    }
+    return Object.entries(m).sort((a, b) => b[1] - a[1])
+  }, [library])
+  const handleTagReplace = async () => {
+    const from = tagFrom.trim()
+    const to = tagTo.trim()
+    if (!from) { showToast('请填写来源标签', 'warning'); return }
+    if (!to) { showToast('请填写目标标签', 'warning'); return }
+    const delta = await replaceTag(from, to)
+    showToast(`已将「${from}」替换为「${to}」（影响 ${(delta && delta.upserts || []).length} 部）`, 'success')
+    setTagFrom('')
+    setTagTo('')
+  }
+  const handleTagRemove = async (tag) => {
+    const delta = await removeTag(tag)
+    showToast(`已移除标签「${tag}」（影响 ${(delta && delta.upserts || []).length} 部）`, 'info')
+  }
 
   // 加载时与强调色变化时同步 CSS 变量
   useEffect(() => {
@@ -208,6 +263,7 @@ export default function Settings() {
   const handleExport = async () => {
     const ok = await api.exportData()
     showToast(ok ? '数据已导出' : '导出已取消', ok ? 'success' : 'info')
+    if (ok) refreshSaved()
   }
   // B-06：主进程导入返回 { ok, imported, skipped }，区分取消 / 失败 / 成功（含剔除统计）
   const handleImport = async () => {
@@ -264,7 +320,21 @@ export default function Settings() {
   return (
     <div className="settings">
       <nav className="settings-nav">
-        {NAV_GROUPS.map((g) => (
+        {/* UX-12：设置导航搜索 */}
+        <div className="ds-navlist__search" style={{ marginBottom: 8 }}>
+          <div className="ds-input ds-navlist__search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ds-input__icon">
+              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" />
+            </svg>
+            <input
+              type="text"
+              placeholder="搜索设置…"
+              value={navQuery}
+              onChange={(e) => setNavQuery(e.target.value)}
+            />
+          </div>
+        </div>
+        {navGroups.map((g) => (
           <div className="ds-navlist__group" key={g.title}>
             <div className="ds-navlist__group-title">{g.title}</div>
             {g.items.map((it) => (
@@ -278,6 +348,9 @@ export default function Settings() {
             ))}
           </div>
         ))}
+        {navGroups.length === 0 && (
+          <span className="text-tertiary" style={{ fontSize: 11, padding: '4px 8px' }}>无匹配设置项</span>
+        )}
       </nav>
 
       <div className="settings-main">
@@ -818,9 +891,70 @@ export default function Settings() {
             </div>
           )}
 
+          {/* ══ 标签管理（F-9）══ */}
+          {activeSection === 'tags' && (
+            <div className="ds-settingrow__group">
+              <span className="ds-settingrow__grouplabel">重命名 / 合并标签</span>
+              <div className="ds-settingrow__panel">
+                <SettingRow
+                  title="来源标签 → 目标标签"
+                  desc="把所有「来源标签」统一替换为「目标标签」（合并后来源标签消失）"
+                  control={
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%', maxWidth: 460 }}>
+                      <div className="ds-input" style={{ flex: 1 }}>
+                        <input value={tagFrom} placeholder="来源标签" onChange={(e) => setTagFrom(e.target.value)} />
+                      </div>
+                      <span className="text-tertiary">→</span>
+                      <div className="ds-input" style={{ flex: 1 }}>
+                        <input value={tagTo} placeholder="目标标签" onChange={(e) => setTagTo(e.target.value)} />
+                      </div>
+                      <button className="ds-btn ds-btn--secondary" onClick={handleTagReplace}>合并/重命名</button>
+                    </div>
+                  }
+                />
+              </div>
+              <span className="ds-settingrow__grouplabel">全部标签（{tagRows.length}）</span>
+              <div className="ds-settingrow__panel">
+                {tagRows.length === 0 ? (
+                  <span className="text-tertiary">暂无标签</span>
+                ) : (
+                  tagRows.map(([tag, count]) => (
+                    <div className="ds-folderrow" key={tag}>
+                      <div className="ds-folderrow__main">
+                        <span className="ds-tag ds-tag--brand">{tag}</span>
+                        <span className="ds-tag ds-tag--count">{count} 部</span>
+                      </div>
+                      <div className="ds-folderrow__actions">
+                        <button
+                          className="ds-btn ds-btn--sm ds-btn--secondary"
+                          onClick={() => { setTagFrom(tag); setTagTo('') }}
+                          title="作为合并/重命名的来源标签"
+                        >
+                          设为来源
+                        </button>
+                        <button className="ds-btn ds-btn--sm ds-btn--tertiary" onClick={() => handleTagRemove(tag)}>
+                          移除
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ══ 数据管理 ══ */}
           {activeSection === 'data' && (
             <>
+              {/* UX-14：备份意识提示 */}
+              <div className="ds-settingrow__group">
+                <div className="ds-settingrow__panel">
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 12px' }}>
+                    当前媒体库 {library.length} 部番剧 · 数据文件最后修改 {lastSavedText}
+                    —— 建议定期使用下方「导出数据」备份
+                  </div>
+                </div>
+              </div>
               <div className="ds-settingrow__group">
                 <div className="ds-settingrow__panel">
                   <SettingRow

@@ -251,9 +251,19 @@ function isAllowedSubtitle(filePath) {
 // P-12：列表页首屏内嵌的条目上限（超大型媒体库防传输与 DOM 膨胀）；搜索接口同上限
 const LIST_PAGE_MAX = 500
 
+// P-14：列表页构建缓存（TTL 5s）——避免每次刷新页面都重新全库 buildItems
+let itemsCache = { at: 0, list: null }
+const ITEMS_CACHE_TTL = 5 * 1000
+function cachedItems() {
+  const now = Date.now()
+  if (itemsCache.list && now - itemsCache.at < ITEMS_CACHE_TTL) return itemsCache.list
+  itemsCache = { at: now, list: buildItems() }
+  return itemsCache.list
+}
+
 // 列表页：媒体库视频列表（含 token 的 URL 才能打开；首屏前 500，搜索走 /list 接口）
 function indexHtml(token) {
-  const all = buildItems()
+  const all = cachedItems()
   const total = all.length
   const shown = all.slice(0, LIST_PAGE_MAX)
   const initJson = JSON.stringify({ total, shown }).replace(/</g, '\\u003c')
@@ -335,7 +345,8 @@ function indexHtml(token) {
 </html>`
 }
 
-// 单集播放页（F-8：同目录存在字幕时附带 <track> 显示字幕）
+// 单集播放页（F-8：同目录存在字幕时附带 <track> 显示字幕；
+// UX-11：左上角返回列表按钮 + 双击画面暂停/播放）
 function playerHtml(token, filePath) {
   const name = path.basename(filePath)
   const b64 = Buffer.from(filePath, 'utf-8').toString('base64url')
@@ -350,14 +361,25 @@ function playerHtml(token, filePath) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${String(name).replace(/</g, '&lt;')}</title>
 <style>
-  html,body{margin:0;background:#000}
+  html,body{margin:0;background:#000;overscroll-behavior:none}
   video{width:100vw;height:100vh;display:block;background:#000}
   video::cue{font-size:1.1em;background:rgba(0,0,0,0.6)}
+  .back{position:fixed;top:12px;left:12px;z-index:10;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.55);color:#fff;font-size:14px;cursor:pointer;-webkit-user-select:none;user-select:none}
+  .back:hover{background:rgba(0,0,0,0.8)}
 </style>
 </head>
 <body>
+<button class="back" onclick="location.href='/play/${token}'">← 返回列表</button>
 <video controls autoplay src="/stream/${token}/${b64}">${subTrack}
 </video>
+<script>
+(function(){
+  const v = document.querySelector('video');
+  if (v) {
+    v.addEventListener('dblclick', function(){ if (v.paused) v.play(); else v.pause(); });
+  }
+})();
+</script>
 </body>
 </html>`
 }

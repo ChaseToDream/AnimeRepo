@@ -64,7 +64,7 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning, batchAnime, undoLastBatch, showToast, addFolder, settings, updateAnime, api, loading, createAnime } = useApp()
+  const { library, scan, scanning, batchAnime, undoLastBatch, showToast, addFolder, settings, updateAnime, api, loading, createAnime, refreshMetaBatch } = useApp()
   const navigate = useNavigate()
   // UX-04：视图/排序从上次会话恢复（默认网格 + 添加时间）
   const [uiPrefs] = useState(loadUiPrefs)
@@ -77,6 +77,8 @@ export default function Library({ filter, setFilter }) {
   const [tagsDialogOpen, setTagsDialogOpen] = useState(false)
   // F-7：手动添加“想看”占位条目的输入对话框
   const [addOpen, setAddOpen] = useState(false)
+  // O-10：批量补全元数据执行中
+  const [refreshingMeta, setRefreshingMeta] = useState(false)
   // 删除确认目标（批量 = 选中集合；单个 = 右键菜单目标）
   const [removeTarget, setRemoveTarget] = useState(null)
   // UX-02：右键菜单状态 { x, y, anime }
@@ -140,6 +142,14 @@ export default function Library({ filter, setFilter }) {
     }
     return arr
   }, [items, deferredSort, filter.status])
+
+  // O-13：继续观看——最近有播放记录的「正在观看」条目（按 lastWatchedAt 倒序）
+  const continueRows = useMemo(() => {
+    return library
+      .filter((a) => a.lastWatchedAt && a.status === 'watching')
+      .sort((a, b) => new Date(b.lastWatchedAt || 0) - new Date(a.lastWatchedAt || 0))
+      .slice(0, 6)
+  }, [library])
 
   // 全局统计（基于整个媒体库）
   const stats = {
@@ -240,6 +250,24 @@ export default function Library({ filter, setFilter }) {
   const handleAddFolder = async () => {
     const folders = await addFolder()
     if (folders && folders.length) scan()
+  }
+
+  // O-10：批量补全元数据（自动选择缺封面/简介的条目）
+  const handleMetaBatch = async () => {
+    if (refreshingMeta) return
+    setRefreshingMeta(true)
+    try {
+      const res = await refreshMetaBatch()
+      if (!res || !res.total) {
+        showToast('没有需要补全的条目（封面与简介均已就绪）', 'info')
+      } else {
+        showToast(`补全完成：更新 ${res.updated} 部${res.failed ? `，失败 ${res.failed} 部` : ''}`, res.failed ? 'warning' : 'success')
+      }
+    } catch (e) {
+      showToast('批量补全失败', 'error')
+    } finally {
+      setRefreshingMeta(false)
+    }
   }
 
   // —— N4 多选与批量操作 ——
@@ -396,6 +424,17 @@ export default function Library({ filter, setFilter }) {
             {selectionMode ? '取消选择' : '多选'}
           </button>
 
+          {/* O-10：批量补全缺失的封面/简介 */}
+          <button
+            className="ds-btn ds-btn--secondary ds-btn--sm"
+            onClick={handleMetaBatch}
+            disabled={refreshingMeta}
+            style={refreshingMeta ? { opacity: 0.6, cursor: 'default' } : undefined}
+            title="为缺少封面或简介的番剧批量补全在线资料"
+          >
+            {refreshingMeta ? '补全中…' : '补全元数据'}
+          </button>
+
           {/* F-7：手动添加“想看”占位条目 */}
           <button className="ds-btn ds-btn--secondary ds-btn--sm" onClick={() => setAddOpen(true)}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="icon"><path d="M12 5v14M5 12h14" /></svg>
@@ -550,6 +589,37 @@ export default function Library({ filter, setFilter }) {
                 <span className="ds-statcard__value">{formatHours(stats.hours)}</span>
               </div>
             </div>
+
+            {/* O-13：继续观看快捷卡 */}
+            {continueRows.length > 0 && (
+              <div className="library-continue" style={{ margin: '12px 0 4px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>继续观看</div>
+                <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                  {continueRows.map((a) => {
+                    const ep = nextEpisode(a) || (a.episodes || [])[0]
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => ep && navigate(`/player/${a.id}/${ep.id}`)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, width: 240,
+                          padding: 8, borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                          background: 'var(--bg-overlay-l1, #14151a)', border: '1px solid var(--border-neutral-l1, #26272e)',
+                          color: 'inherit'
+                        }}
+                        title={`${a.title} · 继续播放 EP${ep ? ep.number : ''}`}
+                      >
+                        <Poster anime={a} as="span" imgStyle={{ width: 44, height: 62, objectFit: 'cover', borderRadius: 6 }} style={{ width: 44, height: 62, borderRadius: 6, fontSize: 8, padding: 4, boxSizing: 'border-box' }} />
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
+                          <span style={{ fontSize: 11, opacity: 0.7 }}>{a.lastWatchedEpisode ? '上次看到 EP' : ''}{ep ? `EP${ep.number}` : ''}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {view === 'grid' ? (
               <div

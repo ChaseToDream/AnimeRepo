@@ -51,12 +51,15 @@ export default function Detail() {
   const [splitTitle, setSplitTitle] = useState('')
   // O-2：在线元数据手动刷新状态
   const [refreshing, setRefreshing] = useState(false)
+  // UX-10：长简介展开/收起
+  const [descExpanded, setDescExpanded] = useState(false)
 
   // 切番剧时重置收藏与季选择
   useEffect(() => {
     setFav(Boolean(anime?.isFavorite))
     setSeason(null)
     setTab('episodes')
+    setDescExpanded(false)
   }, [anime?.id])
 
   if (!anime) {
@@ -256,6 +259,12 @@ export default function Detail() {
               </div>
 
               {anime.description && <p className="hero__desc">{anime.description}</p>}
+              {/* UX-13：占位条目资料缺失时的引导 */}
+              {!anime.description && !anime.coverUrl && (
+                <p className="hero__desc" style={{ opacity: 0.75 }}>
+                  暂无封面与简介 —— 点击「刷新元数据」可从网络获取在线资料
+                </p>
+              )}
 
               <div className="hero__actions">
                 {cont && (
@@ -504,7 +513,21 @@ export default function Detail() {
                 <div className="info-row">
                   <span className="info-row__key">简介</span>
                   <div className="info-row__value" style={{ whiteSpace: 'pre-wrap' }}>
-                    {anime.description || '暂无简介'}
+                    {/* UX-10：超过 280 字折叠，可展开/收起 */}
+                    {anime.description
+                      ? (anime.description.length > 280
+                        ? (descExpanded ? anime.description : anime.description.slice(0, 280) + '…')
+                        : anime.description)
+                      : '暂无简介'}
+                    {anime.description && anime.description.length > 280 && (
+                      <button
+                        className="ds-btn ds-btn--link"
+                        style={{ padding: 0, marginLeft: 4, fontSize: 12 }}
+                        onClick={() => setDescExpanded((v) => !v)}
+                      >
+                        {descExpanded ? '收起' : '展开'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

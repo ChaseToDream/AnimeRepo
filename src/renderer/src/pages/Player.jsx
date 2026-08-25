@@ -189,8 +189,10 @@ export default function Player() {
   // 生成 10 帧 dataURL；hover 进度条时按百分比显示对应帧
   const [thumbs, setThumbs] = useState([])
   const [thumbPreview, setThumbPreview] = useState(null) // { pct } 或 null
+  // P-13：首次 hover 进度条时才启动抓帧，避免进入播放页即占用解码资源
+  const [thumbsWanted, setThumbsWanted] = useState(false)
   useEffect(() => {
-    if (!videoSrc) {
+    if (!videoSrc || !thumbsWanted) {
       setThumbs([])
       return undefined
     }
@@ -240,7 +242,7 @@ export default function Player() {
       v.removeAttribute('src')
       v.load()
     }
-  }, [videoSrc])
+  }, [videoSrc, thumbsWanted])
 
   // —— 片头/片尾跳过（1.1：skipOpEd 真正落地） ——
   const [showSkipOp, setShowSkipOp] = useState(false)
@@ -730,6 +732,8 @@ export default function Player() {
               onMouseMove={(e) => {
                 // 必须在事件分发期间同步读取 rect（同 P6 白屏修复的教训），
                 // P-4：结果合并到 rAF 每帧一次 setState，避免高频缩略图重渲染
+                // P-13：首次 hover 即启动缩略图抓帧（之后 state 已置 true，不再重复触发）
+                if (!thumbsWanted) setThumbsWanted(true)
                 const rect = e.currentTarget.getBoundingClientRect()
                 pendingThumbRef.current = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
                 if (thumbRafRef.current) return

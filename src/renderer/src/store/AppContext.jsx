@@ -239,6 +239,27 @@ export function AppProvider({ children }) {
     return res
   }, [])
 
+  // O-10：批量补全在线元数据（主进程返回 upserts 增量，本地合并）
+  const refreshMetaBatch = useCallback(async (ids) => {
+    const res = await api.batchRefreshMetadata(ids)
+    if (res && res.upserts && res.upserts.length) {
+      applyDelta({ upserts: res.upserts, removedIds: [] })
+    }
+    return res
+  }, [applyDelta])
+
+  // F-9：标签重命名/合并/删除（主进程返回 upserts 增量）
+  const replaceTag = useCallback(async (oldTag, newTag) => {
+    const delta = await api.replaceTag(oldTag, newTag)
+    applyDelta(delta)
+    return delta
+  }, [applyDelta])
+  const removeTag = useCallback(async (tag) => {
+    const delta = await api.removeTag(tag)
+    applyDelta(delta)
+    return delta
+  }, [applyDelta])
+
   // N4：批量操作（PF-02：主进程返回增量，本地合并）
   // mark-watched 会在主进程追加观看日志，完成后刷新历史
   // UX-3：可撤销的批量操作（标记已看/未看、设状态、收藏、设标签）在改动前
@@ -398,6 +419,9 @@ export function AppProvider({ children }) {
       updateAnime,
       removeAnime,
       createAnime,
+      refreshMetaBatch,
+      replaceTag,
+      removeTag,
       batchAnime,
       mergeAnime,
       splitAnime,
@@ -429,6 +453,9 @@ export function AppProvider({ children }) {
       updateAnime,
       removeAnime,
       createAnime,
+      refreshMetaBatch,
+      replaceTag,
+      removeTag,
       batchAnime,
       mergeAnime,
       splitAnime,
