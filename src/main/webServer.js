@@ -143,15 +143,30 @@ export function getWebInfo() {
 }
 
 // —— 静态页面 ——
-// 列表页：媒体库全部视频（含 token 的 URL 才能打开）
-function indexHtml(token) {
+// 收集全部可播放视频条目（可按标题过滤）
+function buildItems(filter) {
   const items = []
+  const q = String(filter || '').trim().toLowerCase()
   for (const a of list()) {
+    const title = a.title || ''
     for (const e of a.episodes || []) {
-      if (e.filePath) items.push({ t: a.title, n: e.number, f: e.filePath })
+      if (!e.filePath) continue
+      if (q && !title.toLowerCase().includes(q)) continue
+      items.push({ t: title, n: e.number, f: e.filePath })
     }
   }
-  const dataJson = JSON.stringify(items).replace(/</g, '\\u003c')
+  return items
+}
+
+// P-12：列表页首屏内嵌的条目上限（超大型媒体库防传输与 DOM 膨胀）；搜索接口同上限
+const LIST_PAGE_MAX = 500
+
+// 列表页：媒体库视频列表（含 token 的 URL 才能打开；首屏前 500，搜索走 /list 接口）
+function indexHtml(token) {
+  const all = buildItems()
+  const total = all.length
+  const shown = all.slice(0, LIST_PAGE_MAX)
+  const initJson = JSON.stringify({ total, shown }).replace(/</g, '\\u003c')
   return `<!doctype html>
 <html lang="zh">
 <head>
@@ -161,6 +176,7 @@ function indexHtml(token) {
 <style>
   body{background:#0d0d12;color:#e8e8ea;font-family:system-ui,"Microsoft YaHei",sans-serif;margin:0;padding:16px}
   h1{font-size:18px;margin:4px 0 12px}
+  input{width:100%;max-width:420px;box-sizing:border-box;padding:8px 12px;border-radius:8px;border:1px solid #2a2b31;background:#121318;color:#e8e8ea;font-size:14px;margin-bottom:10px}
   .info{color:#9aa0a6;font-size:12px;margin-bottom:12px}
   ul{list-style:none;padding:0;margin:0}
   li{padding:8px 10px;border-radius:8px;cursor:pointer}
@@ -171,22 +187,45 @@ function indexHtml(token) {
 </head>
 <body>
 <h1>AnimeRepo 局域网播放</h1>
-<div class="info">共 ${items.length} 集 · 点击开始播放</div>
+<input id="q" type="search" placeholder="搜索番剧…" autocomplete="off" />
+<div class="info" id="info"></div>
 <ul id="list"></ul>
 <script>
 (function(){
-  const TOK=${JSON.stringify(token)};
-  const DATA=${dataJson};
+  const INIT = ${initJson};
+  const TOK = ${JSON.stringify(token)};
   function b64u(s){return btoa(String.fromCharCode.apply(null,new Uint8Array(new TextEncoder().encode(s)))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/g,'')}
-  const ul=document.getElementById('list');
-  DATA.forEach(function(it){
-    const li=document.createElement('li');
-    const t=document.createElement('div');t.className='t';t.textContent=(it.n>0?'#'+String(it.n).padStart(2,'0')+' ':'')+it.t;
-    const m=document.createElement('div');m.className='m';m.textContent=it.f.split(/[\\\\/]/).pop();
-    li.appendChild(t);li.appendChild(m);
-    li.addEventListener('click',function(){window.open('/page/'+TOK+'/'+b64u(it.f),'_blank')});
-    ul.appendChild(li);
-  });
+  function render(items){
+    const ul = document.getElementById('list');
+    ul.innerHTML = '';
+    (items || []).forEach(function(it){
+      const li = document.createElement('li');
+      const t = document.createElement('div'); t.className = 't';
+      t.textContent = (it.n > 0 ? '#' + String(it.n).padStart(2,'0') + ' ' : '') + it.t;
+      const m = document.createElement('div'); m.className = 'm';
+      m.textContent = (it.f || '').split(/[\\\\/]/).pop();
+      li.appendChild(t); li.appendChild(m);
+      li.addEventListener('click', function(){ window.open('/page/' + TOK + '/' + b64u(it.f), '_blank'); });
+      ul.appendChild(li);
+    });
+  }
+  function apply(kw){
+    const info = document.getElementById('info');
+    if (!kw) {
+      info.textContent = '共 ' + INIT.total + ' 集 · 点击开始播放' + (INIT.total > INIT.shown.length ? '（仅显示前 ' + INIT.shown.length + ' 条）' : '');
+      render(INIT.shown);
+      return;
+    }
+    fetch('/list/' + TOK + '?q=' + encodeURIComponent(kw))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        info.textContent = '匹配 ' + d.total + ' 集' + (d.total > d.items.length ? '（仅显示前 ' + d.items.length + ' 条）' : '');
+        render(d.items || []);
+      })
+      .catch(function(){});
+  }
+  document.getElementById('q').addEventListener('input', function(e){ apply(e.target.value); });
+  apply('');
 })();
 </script>
 </body>
@@ -282,8 +321,17 @@ function handleRequest(req, res) {
     sendText(res, 200, indexHtml(token))
     return
   }
-  if (kind === 'page' && seg.length === 4) {
-    const filePath = b64decode(seg[3])
+  // P-12：搜索接口（标题模糊匹配，JSON 返回，上限 LIST_PAGE_MAX）
+  if (kind === 'list' && seg.length === 2) {
+    const q = url.searchParams.get('q') || ''
+    const matched = buildItems(q)
+    const payload = JSON.stringify({ total: matched.length, items: matched.slice(0, LIST_PAGE_MAX) }).replace(/</g, '\\u003c')
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+    res.end(payload)
+    return
+  }
+  if (kind === 'page' && seg.length === 3) {
+    const filePath = b64decode(seg[2])
     if (!isAllowedVideo(filePath)) {
       sendText(res, 403, 'forbidden', 'text/plain')
       return
@@ -291,8 +339,8 @@ function handleRequest(req, res) {
     sendText(res, 200, playerHtml(token, filePath))
     return
   }
-  if (kind === 'stream' && seg.length === 4) {
-    const filePath = b64decode(seg[3])
+  if (kind === 'stream' && seg.length === 3) {
+    const filePath = b64decode(seg[2])
     serveVideo(req, res, filePath)
     return
   }

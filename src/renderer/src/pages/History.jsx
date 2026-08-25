@@ -20,12 +20,20 @@ function dayLabel(key) {
 }
 
 export default function History() {
-  const { history, loadHistory, getAnime } = useApp()
+  const { history, loadHistory, library } = useApp()
   const navigate = useNavigate()
 
   useEffect(() => {
     loadHistory()
   }, [loadHistory])
+
+  // O-7/P-11：番剧索引 Map——原先每条记录都 getAnime() 全库 find（O(n×500)），
+  // 改为一次构建索引后 O(1) 查询
+  const animeMap = useMemo(() => {
+    const m = new Map()
+    for (const a of library) m.set(a.id, a)
+    return m
+  }, [library])
 
   // 按本地日期分组（保持新的在前）
   const groups = useMemo(() => {
@@ -75,7 +83,7 @@ export default function History() {
               </div>
               <div className="history-group__list">
                 {list.map((h) => {
-                  const anime = getAnime(h.animeId)
+                  const anime = h.animeId ? animeMap.get(h.animeId) || null : null
                   const cover = anime ? anime.coverUrl : ''
                   const grad = anime ? anime.coverGradient || coverGradient(anime.title) : coverGradient(h.animeTitle)
                   const time = new Date(h.watchedAt)

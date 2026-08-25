@@ -11,6 +11,23 @@ const QUALITIES = ['480P', '720P', '1080P']
 const SETTING_TABS = ['视频', '音频', '字幕', '播放']
 const PROGRESS_SAVE_INTERVAL = 5000
 
+// O-6：播放器个人偏好持久化（音量 / 画面滤镜），下次打开同一播放器时沿用上次设置
+const PLAYER_PREF_KEY = 'animerepo.player.prefs'
+function loadPlayerPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(PLAYER_PREF_KEY) || '{}')
+  } catch (e) {
+    return {}
+  }
+}
+function savePlayerPrefs(prefs) {
+  try {
+    localStorage.setItem(PLAYER_PREF_KEY, JSON.stringify(prefs))
+  } catch (e) {
+    /* localStorage 不可用时忽略 */
+  }
+}
+
 // 字幕大小 → cue 字号（兼容设置页英文值与历史中文值）
 const SUB_SIZE_MAP = {
   small: '0.9em', medium: '1.15em', large: '1.4em', xlarge: '1.7em',
@@ -107,7 +124,12 @@ export default function Player() {
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(settings?.defaultVolume ?? 80)
+  // O-6：音量优先沿用上次会话偏好，其次为设置的默认音量
+  const playerPrefs = useMemo(loadPlayerPrefs, [])
+  const [volume, setVolume] = useState(() => {
+    const p = playerPrefs.volume
+    return typeof p === 'number' && p >= 0 && p <= 100 ? p : (settings?.defaultVolume ?? 80)
+  })
   const [speed, setSpeed] = useState(settings?.defaultPlaySpeed ?? 1.0)
   const [speedMenuOpen, setSpeedMenuOpen] = useState(false)
 
@@ -117,11 +139,15 @@ export default function Player() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState('视频')
 
-  // —— 图像（本地 state 映射到 video filter，不持久化） ——
-  const [brightness, setBrightness] = useState(50)
-  const [contrast, setContrast] = useState(50)
-  const [saturation, setSaturation] = useState(50)
-  const [hue, setHue] = useState(0)
+  // —— 图像（本地 state 映射到 video filter；O-6：沿用上次偏好并自动持久化） ——
+  const [brightness, setBrightness] = useState(() => (typeof playerPrefs.brightness === 'number' ? playerPrefs.brightness : 50))
+  const [contrast, setContrast] = useState(() => (typeof playerPrefs.contrast === 'number' ? playerPrefs.contrast : 50))
+  const [saturation, setSaturation] = useState(() => (typeof playerPrefs.saturation === 'number' ? playerPrefs.saturation : 50))
+  const [hue, setHue] = useState(() => (typeof playerPrefs.hue === 'number' ? playerPrefs.hue : 0))
+  // O-6：音量 / 画面滤镜变化时自动写回 localStorage
+  useEffect(() => {
+    savePlayerPrefs({ volume, brightness, contrast, saturation, hue })
+  }, [volume, brightness, contrast, saturation, hue])
 
   // —— 画质 / 音频 / 字幕 / 播放 偏好 ——
   const [quality, setQuality] = useState(settings?.quality || '1080P')

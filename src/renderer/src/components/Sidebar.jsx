@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import { STATUS_LABEL, STATUS_TAG_CLASS } from '../lib/format'
@@ -32,22 +32,29 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
     searchInputRef.current?.focus()
   }
 
-  const countBy = (status) => library.filter((a) => a.status === status).length
-  const total = library.length
-
-  const genreSet = [...new Set(library.flatMap((a) => a.genres || []))]
-  // O2：各流派计数（用于分类徽章）
-  const genreCounts = library.reduce((m, a) => {
-    for (const g of a.genres || []) m[g] = (m[g] || 0) + 1
+  // O-8/P-10：计数 useMemo 化——Library 任何变更都会触发 Sidebar 重渲染，
+  // 原先每次渲染全库 filter/reduce 计算状态数、流派计数与标签列表（大库开销明显）。
+  const statusCounts = useMemo(() => {
+    const m = { all: library.length, watching: 0, completed: 0, plan: 0, onhold: 0 }
+    for (const a of library) {
+      if (a.status in m) m[a.status] += 1
+    }
     return m
-  }, {})
-  // 1.3：标签集合（按数量降序，用于标签筛选）
-  const tagList = Object.entries(
-    library.reduce((m, a) => {
-      for (const t of a.tags || []) m[t] = (m[t] || 0) + 1
-      return m
-    }, {})
-  ).sort((a, b) => b[1] - a[1])
+  }, [library])
+  const { genreCounts, genreSet } = useMemo(() => {
+    const counts = {}
+    for (const a of library) {
+      for (const g of a.genres || []) counts[g] = (counts[g] || 0) + 1
+    }
+    return { genreCounts: counts, genreSet: Object.keys(counts) }
+  }, [library])
+  const tagList = useMemo(() => {
+    const counts = {}
+    for (const a of library) {
+      for (const t of a.tags || []) counts[t] = (counts[t] || 0) + 1
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])
+  }, [library])
 
   const navigateTo = (route) => navigate(route)
 
@@ -90,13 +97,7 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
 
         <div className="ds-navlist__group">
           <div className="ds-navlist__group-title">{t('nav.myGroup')}</div>
-          {[
-            ['all', total],
-            ['watching', countBy('watching')],
-            ['completed', countBy('completed')],
-            ['plan', countBy('plan')],
-            ['onhold', countBy('onhold')]
-          ].map(([key, count]) => (
+          {[['all', statusCounts.all], ['watching', statusCounts.watching], ['completed', statusCounts.completed], ['plan', statusCounts.plan], ['onhold', statusCounts.onhold]].map(([key, count]) => (
             <button
               key={key}
               className={
