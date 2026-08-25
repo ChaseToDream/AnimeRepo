@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import api from '../lib/api'
 import Toasts from '../components/Toasts'
 import { createTranslator } from '../lib/i18n'
@@ -39,9 +39,11 @@ export function AppProvider({ children }) {
   const [history, setHistory] = useState([])
   // U2：全局 Toast
   const [toasts, setToasts] = useState([])
-  const showToast = useCallback((message, type = 'info', duration = 2500) => {
+  // UX-3：批量操作撤销栈（上限 10 条），记录可撤销操作的原状态快照
+  const undoStack = useRef([])
+  const showToast = useCallback((message, type = 'info', duration = 2500, action = null) => {
     const id = Date.now() + Math.random().toString(36).slice(2, 6)
-    setToasts((prev) => [...prev, { id, message, type }])
+    setToasts((prev) => [...prev, { id, message, type, action }])
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, duration)
@@ -230,12 +232,73 @@ export function AppProvider({ children }) {
 
   // N4：批量操作（PF-02：主进程返回增量，本地合并）
   // mark-watched 会在主进程追加观看日志，完成后刷新历史
+  // UX-3：可撤销的批量操作（标记已看/未看、设状态、收藏、设标签）在改动前
+  // 把受影响的番剧原状态存入撤销栈，供 undoLastBatch 精确回滚。
   const batchAnime = useCallback(async (action, ids, payload) => {
+    const reversible = ['mark-watched', 'mark-unwatched', 'set-status', 'set-favorite', 'set-tags'].includes(action)
+    let snapshot = null
+    if (reversible && Array.isArray(ids) && ids.length) {
+      snapshot = ids
+        .map((id) => {
+          const a = library.find((x) => x.id === id)
+          if (!a) return null
+          return {
+            id,
+            status: a.status,
+            isFavorite: Boolean(a.isFavorite),
+            tags: Array.isArray(a.tags) ? [...a.tags] : [],
+            // 逐集原状态（撤销标记类操作时按集精确恢复）
+            episodes: (a.episodes || []).map((e) => ({ id: e.id, watched: Boolean(e.watched), progress: e.progress || 0 }))
+          }
+        })
+        .filter(Boolean)
+    }
     const delta = await api.batchAnime({ action, ids, payload })
     applyDelta(delta)
     if (action === 'mark-watched') loadHistory()
+    if (snapshot && snapshot.length) {
+      undoStack.current.push({ action, snapshot })
+      if (undoStack.current.length > 10) undoStack.current.shift()
+    }
     return delta
-  }, [applyDelta, loadHistory])
+  }, [applyDelta, loadHistory, library])
+
+  // UX-3：撤销最近一次可撤销的批量操作（精确回滚到操作前状态）
+  const undoLastBatch = useCallback(async () => {
+    const entry = undoStack.current.pop()
+    if (!entry) {
+      showToast('没有可撤销的批量操作', 'info')
+      return null
+    }
+    const updated = []
+    for (const p of entry.snapshot) {
+      const cur = library.find((x) => x.id === p.id)
+      if (!cur) continue
+      let next = null
+      if (entry.action === 'mark-watched' || entry.action === 'mark-unwatched') {
+        const epMap = new Map(p.episodes.map((e) => [e.id, e]))
+        const episodes = (cur.episodes || []).map((e) => {
+          const orig = epMap.get(e.id)
+          return orig ? { ...e, watched: orig.watched, progress: orig.progress } : e
+        })
+        next = await api.updateAnime(p.id, { episodes })
+      } else if (entry.action === 'set-status') {
+        next = await api.updateAnime(p.id, { status: p.status })
+      } else if (entry.action === 'set-favorite') {
+        next = await api.updateAnime(p.id, { isFavorite: p.isFavorite })
+      } else if (entry.action === 'set-tags') {
+        next = await api.updateAnime(p.id, { tags: [...p.tags] })
+      }
+      if (next) updated.push(next)
+    }
+    // 本地状态统一回写
+    if (updated.length) {
+      setLibrary((prev) => prev.map((a) => updated.find((x) => x.id === a.id) || a))
+    }
+    if (entry.action === 'mark-watched' || entry.action === 'mark-unwatched') loadHistory()
+    showToast('已撤销上一次批量操作', 'info')
+    return true
+  }, [library, setLibrary, loadHistory, showToast])
 
   // N3：合并 / 拆分番剧（PF-02：增量合并）
   const mergeAnime = useCallback(async (fromId, toId) => {
@@ -335,6 +398,7 @@ export function AppProvider({ children }) {
       updateSettings,
       addFolder,
       removeFolder,
+      undoLastBatch,
       showToast,
       dismissToast,
       t,
@@ -364,6 +428,7 @@ export function AppProvider({ children }) {
       updateSettings,
       addFolder,
       removeFolder,
+      undoLastBatch,
       showToast,
       dismissToast
     ]

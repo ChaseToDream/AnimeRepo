@@ -64,7 +64,7 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning, batchAnime, showToast, addFolder, settings, updateAnime, api, loading } = useApp()
+  const { library, scan, scanning, batchAnime, undoLastBatch, showToast, addFolder, settings, updateAnime, api, loading } = useApp()
   const navigate = useNavigate()
   // UX-04：视图/排序从上次会话恢复（默认网格 + 添加时间）
   const [uiPrefs] = useState(loadUiPrefs)
@@ -266,7 +266,14 @@ export default function Library({ filter, setFilter }) {
     const count = selected.size
     await batchAnime(action, [...selected], payload)
     setSelected(new Set())
-    showToast(`已对 ${count} 部番剧执行批量操作`, 'success')
+    // UX-3：可撤销的批量操作在提示上提供「撤销」入口，点击精确回滚
+    const reversible = ['mark-watched', 'mark-unwatched', 'set-status', 'set-favorite', 'set-tags'].includes(action)
+    showToast(
+      `已对 ${count} 部番剧执行批量操作`,
+      'success',
+      3500,
+      reversible ? { label: '撤销', onClick: () => undoLastBatch() } : null
+    )
   }
   // B-03：批量删除改为对话框确认（原生 confirm 在 frameless 窗口下样式割裂）
   // removeTarget：待删除的 ID 集合（批量 = 选中集；单个 = 右键菜单目标）
