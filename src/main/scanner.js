@@ -65,11 +65,13 @@ function findSubtitles(videoFile, folder, dirCache) {
 async function walkFiles(root, options, onFile) {
   const { maxDepth, isVideo } = options || {}
   const stack = [{ dir: root, depth: 0 }]
-  // Bug 6：已访问目录去重（realpath 解析符号链接/junction），防止目录结构指向祖先时无限遍历
+  // Bug 6：已访问目录去重——普通目录按 resolve 规范化路径（零 I/O），
+  // 符号链接目录额外按 realpath 真实路径去重，防止 junction 指向祖先时无限遍历；
+  // 避免对每个目录都 realpath（大库会拖慢扫描）
   const visited = new Set()
   while (stack.length) {
     const { dir, depth } = stack.pop()
-    const key = await fs.promises.realpath(dir).catch(() => dir)
+    const key = path.resolve(dir)
     if (visited.has(key)) continue
     visited.add(key)
     let entries
@@ -81,6 +83,12 @@ async function walkFiles(root, options, onFile) {
     for (const ent of entries) {
       const full = path.join(dir, ent.name)
       if (ent.isDirectory()) {
+        // 符号链接目录：解析真实路径去重（Windows junction 在此判定为 symbolic link）
+        if (ent.isSymbolicLink()) {
+          const real = await fs.promises.realpath(full).catch(() => full)
+          if (visited.has(real)) continue
+          visited.add(real)
+        }
         if (maxDepth == null || depth < maxDepth) {
           stack.push({ dir: full, depth: depth + 1 })
         }

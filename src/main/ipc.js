@@ -9,10 +9,36 @@ import { titleKey } from './parser'
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
 
 // 扫描进度推送：向发起扫描的窗口发送 scan:progress 事件
+// P2 修复：节流合并高频进度——大库扫描每发现一个文件都会触发一次进度，
+// 若不节流将造成 IPC 洪泛 + 渲染进程高频 setState 全量重渲染，导致白屏卡死
 function scanProgressSender(sender) {
   const win = BrowserWindow.fromWebContents(sender)
-  return (info) => {
+  let lastSent = 0
+  let pending = null
+  let timer = null
+  const THROTTLE_MS = 100
+  const flush = () => {
+    timer = null
+    if (!pending) return
+    const info = pending
+    pending = null
     if (win && !win.isDestroyed()) win.webContents.send('scan:progress', info)
+  }
+  return (info) => {
+    if (!win || win.isDestroyed()) return
+    pending = info
+    if (timer) return
+    const now = Date.now()
+    const wait = Math.max(0, THROTTLE_MS - (now - lastSent))
+    if (wait === 0) {
+      lastSent = now
+      flush()
+    } else {
+      timer = setTimeout(() => {
+        lastSent = Date.now()
+        flush()
+      }, wait)
+    }
   }
 }
 

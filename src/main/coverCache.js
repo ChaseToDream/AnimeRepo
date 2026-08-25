@@ -34,7 +34,8 @@ export async function cacheCover(coverUrl) {
       if (!res || !res.ok) return coverUrl
       const buf = Buffer.from(await res.arrayBuffer())
       if (!buf.length) return coverUrl
-      fs.writeFileSync(file, buf)
+      // 异步写盘，避免大库首扫时同步写阻塞主进程
+      await fs.promises.writeFile(file, buf)
     }
     return 'anime://cover/' + Buffer.from(hash + ext, 'utf-8').toString('base64url')
   } catch (e) {
