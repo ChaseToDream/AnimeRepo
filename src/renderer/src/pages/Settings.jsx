@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useApp } from '../store/AppContext'
 import { ConfirmDialog } from '../components/Dialog'
 import './Settings.css'
@@ -35,7 +35,10 @@ const DEFAULTS = {
   enableAnimations: true,
   uiLanguage: '简体中文',
   dateFormat: 'YYYY-MM-DD',
-  ratingSystem: '10分制'
+  ratingSystem: '10分制',
+  webServerEnabled: false,
+  webServerPort: 39282,
+  webServerBindAll: false
 }
 
 const ACCENTS = ['#32F08C', '#3B82F6', '#EF4444', '#F59E0B', '#8B5CF6', '#EC4899']
@@ -44,7 +47,7 @@ const NAV_GROUPS = [
   { title: '通用', items: [{ key: 'library', label: '番剧库' }, { key: 'scan', label: '扫描设置' }] },
   { title: '播放', items: [{ key: 'player', label: '播放器' }, { key: 'subtitle', label: '字幕' }, { key: 'audio', label: '音频' }] },
   { title: '界面', items: [{ key: 'appearance', label: '外观' }, { key: 'language', label: '语言' }] },
-  { title: '高级', items: [{ key: 'data', label: '数据管理' }, { key: 'about', label: '关于' }] }
+  { title: '高级', items: [{ key: 'webserve', label: '局域网播放' }, { key: 'data', label: '数据管理' }, { key: 'about', label: '关于' }] }
 ]
 
 const SECTION_INFO = {
@@ -55,6 +58,7 @@ const SECTION_INFO = {
   audio: { title: '音频', desc: '配置音轨与音频输出偏好。' },
   appearance: { title: '外观', desc: '设置应用的主题与界面密度。' },
   language: { title: '语言', desc: '选择界面语言与日期、评分显示格式。' },
+  webserve: { title: '局域网播放', desc: '在本机启动只读 HTTP 服务，供局域网设备浏览器观看媒体库视频。' },
   data: { title: '数据管理', desc: '导出、导入、重建或重置应用数据。' },
   about: { title: '关于', desc: '应用版本与许可信息。' }
 }
@@ -150,6 +154,36 @@ export default function Settings() {
   useEffect(() => {
     api.hasUpdateSource().then((v) => setUpdateSourceConfigured(v !== false)).catch(() => {})
   }, [])
+  // F-4：局域网播放服务信息（状态 / 端口 / 访问地址）
+  const [webInfo, setWebInfo] = useState(null)
+  const refreshWebInfo = useCallback(async () => {
+    try {
+      const info = await api.getWebInfo()
+      if (info) setWebInfo(info)
+    } catch (e) {
+      /* 忽略 */
+    }
+  }, [])
+  useEffect(() => { refreshWebInfo() }, [refreshWebInfo])
+  const toggleWebServer = async (enabled) => {
+    const info = await api.setWebServerEnabled(enabled)
+    setWebInfo(info)
+    if (enabled) {
+      showToast(info && info.status === '运行中' ? '局域网播放已开启' : `启动失败：${info && info.status}`, info && info.status === '运行中' ? 'success' : 'error')
+    } else {
+      showToast('局域网播放已关闭', 'info')
+    }
+  }
+  const applyWebConfig = async (patch) => {
+    const info = await api.updateWebServerConfig(patch)
+    setWebInfo(info)
+    showToast('局域网播放设置已应用', 'info')
+  }
+  const handleResetToken = async () => {
+    const info = await api.resetWebToken()
+    setWebInfo(info)
+    showToast('访问令牌已重置，旧地址已失效', 'success')
+  }
   // B-03：应用内确认对话框状态（替换原生 confirm）
   const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
@@ -209,8 +243,13 @@ export default function Settings() {
     showToast('所有数据已重置', 'success')
   }
   const handleRestoreDefaults = () => setDefaultsConfirmOpen(true)
-  const confirmRestoreDefaults = () => {
+  const confirmRestoreDefaults = async () => {
     setDefaultsConfirmOpen(false)
+    // F-4：局域网播放默认关闭——恢复默认时同步停掉正在运行的服务
+    if (settings.webServerEnabled) {
+      const info = await api.setWebServerEnabled(false)
+      setWebInfo(info)
+    }
     updateSettings({ ...DEFAULTS })
     showToast('已恢复默认设置', 'success')
   }
@@ -699,6 +738,75 @@ export default function Settings() {
                     />
                   }
                 />
+              </div>
+            </div>
+          )}
+
+          {/* ══ 局域网播放（F-4）══ */}
+          {activeSection === 'webserve' && (
+            <div className="ds-settingrow__group">
+              <span className="ds-settingrow__grouplabel">局域网播放</span>
+              <div className="ds-settingrow__panel">
+                <SettingRow
+                  title="启用局域网播放"
+                  desc="在本机启动只读 HTTP 服务，局域网设备浏览器可直接观看媒体库视频"
+                  control={<Switch checked={Boolean(settings.webServerEnabled)} onChange={(v) => toggleWebServer(v)} />}
+                />
+                <SettingRow
+                  title="端口"
+                  desc="HTTP 服务端口（被占用时自动顺延）"
+                  control={
+                    <div className="ds-input settings-number-input" style={{ width: 120 }}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="65535"
+                        value={settings.webServerPort}
+                        disabled={Boolean(settings.webServerEnabled)}
+                        onChange={(e) => {
+                          const v = Number(e.target.value)
+                          if (v >= 1 && v <= 65535) applyWebConfig({ port: v })
+                        }}
+                      />
+                    </div>
+                  }
+                />
+                <SettingRow
+                  title="允许局域网访问"
+                  desc="开启后绑定全部网卡（0.0.0.0），同局域网内设备可访问；关闭则仅本机可用"
+                  control={<Switch checked={Boolean(settings.webServerBindAll)} onChange={(v) => applyWebConfig({ bindAll: v })} />}
+                />
+                {webInfo && webInfo.urls && webInfo.urls.length > 0 && (
+                  <SettingRow
+                    title="访问地址"
+                    desc={`${webInfo.status || ''}${webInfo.videoCount ? ` · 共 ${webInfo.videoCount} 集` : ''}`}
+                    control={
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%', maxWidth: 440 }}>
+                        {webInfo.urls.map((u) => (
+                          <a
+                            key={u.url}
+                            className="ds-input"
+                            href={u.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={u.url}
+                            style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}
+                          >
+                            {u.name} · {u.url}
+                          </a>
+                        ))}
+                      </div>
+                    }
+                  />
+                )}
+                <SettingRow
+                  title="重置访问令牌"
+                  desc="旧地址立即失效（若服务运行中会自动重启使新令牌生效）"
+                  control={<button className="ds-btn ds-btn--secondary" onClick={handleResetToken}>重置令牌</button>}
+                />
+                <p className="ds-settingrow__desc" style={{ color: 'var(--status-warning-default)' }}>
+                  安全提示：令牌包含在访问地址中，请勿公开分享；拿到地址即可观看库内视频。
+                </p>
               </div>
             </div>
           )}

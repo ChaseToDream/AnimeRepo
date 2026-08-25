@@ -38,7 +38,12 @@ const DEFAULT_SETTINGS = {
   enableAnimations: true,
   uiLanguage: '简体中文',
   dateFormat: 'YYYY-MM-DD',
-  ratingSystem: '10分制'
+  ratingSystem: '10分制',
+  // F-4：局域网播放（默认关闭；token 由 webServer 首次启动时生成并持久化）
+  webServerEnabled: false,
+  webServerPort: 39282,
+  webServerBindAll: false,
+  webServerToken: ''
 }
 
 // B-4 修复：设置项 schema 白名单——`settings:update` 原先直接 merge 任意 patch，
@@ -79,7 +84,12 @@ const SETTING_SCHEMA = {
   enableAnimations: { boolean: true },
   uiLanguage: { string: true },
   dateFormat: { enum: ['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] },
-  ratingSystem: { enum: ['10分制', '5星制', '百分制'] }
+  ratingSystem: { enum: ['10分制', '5星制', '百分制'] },
+  // F-4：局域网播放设置
+  webServerEnabled: { boolean: true },
+  webServerPort: { number: true, min: 1, max: 65535, int: true },
+  webServerBindAll: { boolean: true },
+  webServerToken: { string: true }
 }
 
 function isValidSetting(key, value) {

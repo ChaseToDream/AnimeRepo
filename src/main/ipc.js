@@ -8,6 +8,7 @@ import { scanLibrary, rebuildDatabase, makeEpisodeId } from './scanner'
 import { titleKey } from './parser'
 import { saveLocalCover, cacheCover } from './coverCache'
 import { fetchAiringSchedule, fetchOnline } from './metadata'
+import { getWebInfo, startWebServer, stopWebServer, resetToken } from './webServer'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
 
@@ -487,6 +488,38 @@ export function registerIpc() {
     } catch (e) {
       return null
     }
+  })
+
+  // —— F-4：局域网播放 ——
+  // getWebInfo 返回服务状态、实际端口、带令牌的访问地址列表
+  ipcMain.handle('web:get-info', () => getWebInfo())
+  // 启停服务（开启时自动生成/复用令牌）
+  ipcMain.handle('web:set-enabled', async (_e, enabled) => {
+    store.updateSettings({ webServerEnabled: Boolean(enabled) })
+    if (enabled) await startWebServer()
+    else stopWebServer()
+    return getWebInfo()
+  })
+  // 更新端口 / 是否允许局域网访问（已启用时自动重启服务）
+  ipcMain.handle('web:update-config', async (_e, patch) => {
+    const clean = {}
+    if (patch && typeof patch === 'object') {
+      if (typeof patch.port === 'number') {
+        clean.webServerPort = Math.max(1, Math.min(65535, Math.round(patch.port)))
+      }
+      if (typeof patch.bindAll === 'boolean') clean.webServerBindAll = patch.bindAll
+    }
+    if (Object.keys(clean).length) {
+      store.updateSettings(clean)
+      if (store.getSettings().webServerEnabled) await startWebServer()
+    }
+    return getWebInfo()
+  })
+  // 重置访问令牌（旧地址立即失效，需重启服务使新令牌生效）
+  ipcMain.handle('web:reset-token', async () => {
+    resetToken()
+    if (store.getSettings().webServerEnabled) await startWebServer()
+    return getWebInfo()
   })
 
   // —— 窗口控制 ——

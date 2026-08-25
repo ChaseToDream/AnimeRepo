@@ -61,8 +61,13 @@ const api = {
   openFolder: (p) => ipcRenderer.invoke('shell:open-folder', p),
   getVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('app:check-update'),
-  // B-7：更新源是否已配置（未配置时不展示检查更新入口）
+  // —— B-7：更新源是否已配置（未配置时不展示检查更新入口）
   hasUpdateSource: () => ipcRenderer.invoke('app:has-update-source'),
+  // —— F-4：局域网播放 ——
+  getWebInfo: () => ipcRenderer.invoke('web:get-info'),
+  setWebServerEnabled: (enabled) => ipcRenderer.invoke('web:set-enabled', enabled),
+  updateWebServerConfig: (patch) => ipcRenderer.invoke('web:update-config', patch),
+  resetWebToken: () => ipcRenderer.invoke('web:reset-token'),
   // —— N-02：外部播放器 ——
   openExternalPlayer: (filePath) => ipcRenderer.invoke('player:open-external', filePath),
   pickExecutable: () => ipcRenderer.invoke('dialog:pick-executable'),

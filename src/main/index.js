@@ -7,6 +7,7 @@ import { registerIpc } from './ipc'
 import { VIDEO_EXT } from './scanner'
 import { getCoverDir, cleanupUnusedCovers } from './coverCache'
 import { startAutoSync, stopAutoSync } from './autosync'
+import { startWebServer, stopWebServer } from './webServer'
 
 // 自定义协议：anime://local/<base64path> 用于安全加载本地视频
 protocol.registerSchemesAsPrivileged([
@@ -140,6 +141,9 @@ app.whenReady().then(() => {
   // N2：启动定时后台扫描（由 autoScanOnStartup 开关控制）
   startAutoSync()
 
+  // F-4：局域网播放服务（按设置自动启停；默认关闭）
+  if (getSettings().webServerEnabled) startWebServer()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -159,4 +163,6 @@ app.on('before-quit', () => {
 // N2：退出时停止定时后台扫描
 app.on('will-quit', () => {
   stopAutoSync()
+  // F-4：退出时关闭局域网播放服务
+  stopWebServer()
 })
