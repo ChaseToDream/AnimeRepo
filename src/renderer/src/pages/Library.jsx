@@ -5,6 +5,7 @@ import {
   STATUS_LABEL,
   STATUS_TAG_CLASS,
   formatHours,
+  formatRating,
   episodeBadge,
   progressPct,
   nextEpisode
@@ -26,7 +27,7 @@ const SORT_OPTIONS = [
 ]
 
 // P4-4：网格虚拟滚动常量（与 .anime-grid 的 gap/padding 对应）
-const GRID_GAP = 16
+// GRID_GAP 随界面密度变化，见组件内 gridGap 计算
 const GRID_TOP_PAD = 24    // 顶部/底部留白（与原 grid 上下 padding 一致）
 const GRID_PAD_X = 48      // 左右留白（.anime-grid-v padding 24px * 2）
 const MIN_CARD_W = 160
@@ -40,7 +41,7 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning, batchAnime, showToast, addFolder } = useApp()
+  const { library, scan, scanning, batchAnime, showToast, addFolder, settings } = useApp()
   const navigate = useNavigate()
   const [view, setView] = useState('grid')
   const [sort, setSort] = useState('created')
@@ -125,22 +126,25 @@ export default function Library({ filter, setFilter }) {
     return () => ro.disconnect()
   }, [view])
 
+  // P4-4：网格行间距与 CSS --spacer-16 保持一致，随界面密度同步（保证虚拟滚动行定位不漂移）
+  const gridGap = settings?.uiDensity === '紧凑' ? 13 : settings?.uiDensity === '宽松' ? 19 : 16
+
   const grid = useMemo(() => {
     const w = gridView.width
-    const cols = w > 0 ? Math.max(1, Math.floor((w - GRID_PAD_X + GRID_GAP) / (MIN_CARD_W + GRID_GAP))) : 5
-    const cardW = cols > 0 ? (w - GRID_PAD_X - (cols - 1) * GRID_GAP) / cols : MIN_CARD_W
+    const cols = w > 0 ? Math.max(1, Math.floor((w - GRID_PAD_X + gridGap) / (MIN_CARD_W + gridGap))) : 5
+    const cardW = cols > 0 ? (w - GRID_PAD_X - (cols - 1) * gridGap) / cols : MIN_CARD_W
     const rowH = cardW * 1.5 + 2
     const rowCount = Math.ceil(sortedItems.length / cols)
-    const totalH = rowCount > 0 ? rowCount * rowH + (rowCount - 1) * GRID_GAP + GRID_TOP_PAD * 2 : 0
+    const totalH = rowCount > 0 ? rowCount * rowH + (rowCount - 1) * gridGap + GRID_TOP_PAD * 2 : 0
     // 可视行范围（前后各 overscan 2 行，缓解滚动跳动）
-    const startRow = Math.max(0, Math.floor((gridView.scrollTop - GRID_TOP_PAD) / (rowH + GRID_GAP)) - 2)
-    const endRow = Math.min(rowCount, Math.ceil((gridView.scrollTop + gridView.height - GRID_TOP_PAD) / (rowH + GRID_GAP)) + 2)
+    const startRow = Math.max(0, Math.floor((gridView.scrollTop - GRID_TOP_PAD) / (rowH + gridGap)) - 2)
+    const endRow = Math.min(rowCount, Math.ceil((gridView.scrollTop + gridView.height - GRID_TOP_PAD) / (rowH + gridGap)) + 2)
     const rows = []
     for (let r = startRow; r < endRow; r++) {
       rows.push({ r, items: sortedItems.slice(r * cols, r * cols + cols) })
     }
     return { cols, cardW, rowH, rowCount, totalH, rows }
-  }, [gridView, sortedItems])
+  }, [gridView, sortedItems, gridGap])
 
   const handlePlay = (e, a) => {
     e.stopPropagation()
@@ -365,7 +369,7 @@ export default function Library({ filter, setFilter }) {
                       key={r}
                       className="anime-grid-v__row"
                       style={{
-                        transform: `translateY(${GRID_TOP_PAD + r * (grid.rowH + GRID_GAP)}px)`,
+                        transform: `translateY(${GRID_TOP_PAD + r * (grid.rowH + gridGap)}px)`,
                         gridTemplateColumns: `repeat(${grid.cols}, ${grid.cardW}px)`
                       }}
                     >
@@ -408,7 +412,7 @@ export default function Library({ filter, setFilter }) {
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="icon">
                                     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                                   </svg>
-                                  {a.rating || '—'}
+                                  {formatRating(a.rating, settings?.ratingSystem)}
                                 </div>
                                 <span className="anime-card__genres">{(a.genres || []).slice(0, 2).join('/')}</span>
                               </div>
@@ -466,7 +470,7 @@ export default function Library({ filter, setFilter }) {
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="icon">
                           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                         </svg>
-                        {a.rating || '—'}
+                        {formatRating(a.rating, settings?.ratingSystem)}
                       </div>
                     </div>
                   ))}

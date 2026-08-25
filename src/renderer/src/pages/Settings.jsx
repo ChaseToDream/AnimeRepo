@@ -11,6 +11,7 @@ const DEFAULTS = {
   recognizeMode: '自动识别',
   regexPattern: '\\[(.*?)\\]\\s*(.+?)\\s*-\\s*(\\d+)',
   preferLocalInfo: true,
+  cleanupOnScan: true,
   unmatchedAction: '保留在未分类中',
   autoNextEpisode: true,
   skipOpEd: true,
@@ -273,6 +274,11 @@ export default function Settings() {
                     control={<Switch checked={settings.autoDownload} onChange={(v) => set({ autoDownload: v })} />}
                   />
                   <SettingRow
+                    title="扫描时清理失效条目"
+                    desc="移除磁盘上已删除番剧的条目；关闭后扫描仅新增/更新，不清理旧数据"
+                    control={<Switch checked={settings.cleanupOnScan} onChange={(v) => set({ cleanupOnScan: v })} />}
+                  />
+                  <SettingRow
                     title="扫描深度"
                     desc="设置扫描子目录的层级深度"
                     control={
@@ -316,7 +322,7 @@ export default function Settings() {
                     control={
                       <Select
                         value={settings.recognizeMode}
-                        options={['自动识别', '正则表达式', '固定格式']}
+                        options={['自动识别', '正则表达式']}
                         onChange={(v) => set({ recognizeMode: v })}
                         width={180}
                       />
@@ -554,13 +560,14 @@ export default function Settings() {
                 />
                 <SettingRow
                   title="海报显示模式"
-                  desc="番剧封面的显示方向"
+                  desc="番剧封面的显示方向（即将支持）"
                   control={
                     <Select
                       value={settings.posterDisplayMode}
                       options={['竖版海报', '横版封面']}
                       onChange={(v) => set({ posterDisplayMode: v })}
                       width={180}
+                      disabled
                     />
                   }
                 />

@@ -319,7 +319,8 @@ async function scanLibrary(store, folders, settings, onProgress) {
   // B2 修复：清理失效条目（数据一致性）——磁盘上已删除的剧集/番剧同步从库中移除
   // 仅当存在有效媒体库文件夹时才执行，避免空库扫描误清空数据
   let removed = 0
-  if (folders && folders.length) {
+  // 1.5：扫描时是否清理失效条目由 cleanupOnScan 控制（默认开启）；关闭后扫描仅新增/更新，不做清理
+  if (folders && folders.length && settings && settings.cleanupOnScan !== false) {
     // B2：被忽略/回收站处理的未匹配文件不再视为有效，对应历史条目将被清理
     const existingFiles = new Set(files.filter((f) => !ignoredFiles.has(f)))
     // P0 修复：区分「文件夹已被移除」与「扫描范围收缩」——
@@ -366,7 +367,8 @@ async function scanLibrary(store, folders, settings, onProgress) {
 async function rebuildDatabase(store, folders, settings, onProgress) {
   const backup = JSON.parse(JSON.stringify(store.list()))
   try {
-    return await scanLibrary(store, folders, settings, onProgress)
+    // 重建数据库需全量一致性，强制开启清理（不受 cleanupOnScan 关闭影响）
+    return await scanLibrary(store, folders, { ...(settings || {}), cleanupOnScan: true }, onProgress)
   } catch (e) {
     // 扫描中途失败时回滚，避免部分写入导致数据损坏
     for (const a of backup) store.upsert(a)

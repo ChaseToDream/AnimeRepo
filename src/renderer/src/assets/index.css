@@ -127,3 +127,35 @@ button:disabled,
     scroll-behavior: auto !important;
   }
 }
+
+/* 界面密度：通过覆盖 --spacer-* 间距 token 实现紧凑/宽松布局
+   （与 Library 虚拟滚动的 GRID_GAP 按密度同步取值，保证网格行定位一致） */
+:root[data-density='compact'] {
+  --spacer-4: 3px;
+  --spacer-6: 5px;
+  --spacer-8: 6px;
+  --spacer-12: 10px;
+  --spacer-16: 13px;
+  --spacer-24: 20px;
+  --spacer-32: 27px;
+  --spacer-40: 34px;
+}
+:root[data-density='comfortable'] {
+  --spacer-4: 5px;
+  --spacer-6: 7px;
+  --spacer-8: 10px;
+  --spacer-12: 14px;
+  --spacer-16: 19px;
+  --spacer-24: 28px;
+  --spacer-32: 37px;
+  --spacer-40: 46px;
+}
+
+/* 动画效果开关：关闭时禁用全局过渡与动画 */
+:root[data-animations='off'] *,
+:root[data-animations='off'] *::before,
+:root[data-animations='off'] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}

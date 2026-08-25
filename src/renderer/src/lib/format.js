@@ -102,7 +102,30 @@ export function coverGradient(title) {
   return `linear-gradient(135deg, ${p[0]} 0%, ${p[1]} 50%, ${p[2]} 100%)`
 }
 
-export function shortDate(iso) {
+export function shortDate(iso, format) {
   if (!iso) return ''
-  return iso.slice(0, 10)
+  // 默认 YYYY-MM-DD（原实现直接截取，保持兼容）；仅 DD/MM/YYYY 与 MM/DD/YYYY 需重新组合
+  if (format !== 'DD/MM/YYYY' && format !== 'MM/DD/YYYY') return iso.slice(0, 10)
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso.slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return format === 'DD/MM/YYYY' ? `${day}/${m}/${y}` : `${m}/${day}/${y}`
+}
+
+// 评分显示值（按评分制式换算）：10分制保持原值、5星制折半、百分制乘 10
+export function formatRating(rating, system) {
+  const r = Number(rating) || 0
+  if (!r) return '—'
+  if (system === '5星制') return (r / 2).toFixed(1)
+  if (system === '百分制') return String(Math.round(r * 10))
+  return r.toFixed(1)
+}
+
+// 评分制式后缀
+export function ratingSuffix(system) {
+  if (system === '5星制') return '/5'
+  if (system === '百分制') return '/100'
+  return '/10'
 }

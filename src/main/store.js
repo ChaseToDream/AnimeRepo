@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
   recognizeMode: '自动识别',
   regexPattern: '\\[(.*?)\\]\\s*(.+?)\\s*-\\s*(\\d+)',
   preferLocalInfo: true,
+  // 1.5：扫描时是否清理失效条目（磁盘上已删除的剧集/番剧）；关闭后扫描仅新增/更新
+  cleanupOnScan: true,
   unmatchedAction: '保留在未分类中',
   autoNextEpisode: true,
   skipOpEd: true,

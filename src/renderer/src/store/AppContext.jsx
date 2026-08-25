@@ -69,6 +69,20 @@ export function AppProvider({ children }) {
     apply(mode === '浅色')
   }, [settings?.themeMode])
 
+  // 界面密度（紧凑/标准/宽松）：通过根节点 data-density 驱动 CSS 覆盖间距 token
+  useEffect(() => {
+    const mode = settings?.uiDensity || '标准'
+    if (mode === '紧凑') document.documentElement.dataset.density = 'compact'
+    else if (mode === '宽松') document.documentElement.dataset.density = 'comfortable'
+    else delete document.documentElement.dataset.density
+  }, [settings?.uiDensity])
+
+  // 动画效果开关：关闭时禁用全局过渡/动画
+  useEffect(() => {
+    if (settings?.enableAnimations === false) document.documentElement.dataset.animations = 'off'
+    else delete document.documentElement.dataset.animations
+  }, [settings?.enableAnimations])
+
   // O4：订阅扫描进度事件（主进程在扫描过程中推送）
   useEffect(() => {
     return api.onScanProgress(setScanProgress)

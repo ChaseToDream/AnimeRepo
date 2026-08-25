@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
-import { STATUS_LABEL, formatHours, progressPct } from '../lib/format'
+import { STATUS_LABEL, formatHours, formatRating, ratingSuffix, progressPct } from '../lib/format'
 import Poster from '../components/Poster'
 import './Stats.css'
 
@@ -38,8 +38,9 @@ function relativeTime(iso) {
 }
 
 export default function Stats() {
-  const { library } = useApp()
+  const { library, settings } = useApp()
   const navigate = useNavigate()
+  const ratingSystem = settings?.ratingSystem || '10分制'
 
   // —— 汇总 ——
   const total = library.length
@@ -158,8 +159,8 @@ export default function Stats() {
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" className="icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
             </div>
             <div className="stats-summary-card__label">平均评分</div>
-            <div className="stats-summary-card__value">{avgRating ? avgRating.toFixed(1) : '—'}</div>
-            <div className="stats-summary-card__sub">/ 10</div>
+            <div className="stats-summary-card__value">{formatRating(avgRating, ratingSystem)}</div>
+            <div className="stats-summary-card__sub">{ratingSuffix(ratingSystem)}</div>
           </div>
         </div>
 
@@ -281,7 +282,7 @@ export default function Stats() {
                     <span className="stats-top-rated-card__rank">{i + 1}</span>
                     <span className="stats-top-rated-card__rating">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                      {a.rating.toFixed(1)}
+                      {formatRating(a.rating, ratingSystem)}
                     </span>
                   </div>
                 ))}
