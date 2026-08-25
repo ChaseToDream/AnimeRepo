@@ -812,6 +812,25 @@ export default function Player() {
                   <>
                     <div className="settings-group">
                       <div className="settings-group__title">播放</div>
+                      {/* N-02：外部播放器唤起——HEVC/Hi10P 等编码内置 <video> 无法解码时的兜底 */}
+                      <div className="setting-row">
+                        <span className="setting-row__label">外部播放器</span>
+                        {settings?.externalPlayerPath ? (
+                          <button
+                            className="ds-btn ds-btn--sm ds-btn--secondary"
+                            onClick={async () => {
+                              if (!ep?.filePath) return
+                              const res = await api.openExternalPlayer(ep.filePath)
+                              if (res && res.ok) showToast('已在外部播放器中打开（本应用不记录其播放进度）', 'info')
+                              else showToast((res && res.error) || '启动外部播放器失败', 'error')
+                            }}
+                          >
+                            用外部播放器播放本集
+                          </button>
+                        ) : (
+                          <span className="setting-row__soon">未配置（设置 → 播放器）</span>
+                        )}
+                      </div>
                       <div className="setting-row">
                         <span className="setting-row__label">自动跳下一集</span>
                         <Switch label="自动跳下一集" on={autoNext} onChange={(v) => { setAutoNext(v); persist({ autoNextEpisode: v }) }} />

@@ -12,6 +12,7 @@ import {
 } from '../lib/format'
 import Poster from '../components/Poster'
 import { ConfirmDialog, PromptDialog } from '../components/Dialog'
+import ContextMenu from '../components/ContextMenu'
 import './Library.css'
 
 const VIEW_TABS = [
@@ -33,6 +34,27 @@ const GRID_TOP_PAD = 24    // 顶部/底部留白（与原 grid 上下 padding �
 const GRID_PAD_X = 48      // 左右留白（.anime-grid-v padding 24px * 2）
 const MIN_CARD_W = 160
 
+// PF-01：列表虚拟滚动常量（.anime-list__row 固定 64px 高）
+const LIST_ROW_H = 64
+const LIST_OVERSCAN = 5
+
+// UX-04：视图 / 排序 / 状态筛选持久化 key
+const UI_PREF_KEY = 'animerepo.library.ui'
+
+// 读取持久化的 UI 偏好（App.jsx 初始化筛选状态也复用此函数）
+export function loadUiPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(UI_PREF_KEY) || '{}')
+    return {
+      view: raw.view === 'list' ? 'list' : 'grid',
+      sort: typeof raw.sort === 'string' ? raw.sort : 'created',
+      status: typeof raw.status === 'string' ? raw.status : 'all'
+    }
+  } catch (e) {
+    return { view: 'grid', sort: 'created', status: 'all' }
+  }
+}
+
 function PlayIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="icon">
@@ -42,16 +64,32 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning, batchAnime, showToast, addFolder, settings } = useApp()
+  const { library, scan, scanning, batchAnime, showToast, addFolder, settings, updateAnime, api } = useApp()
   const navigate = useNavigate()
-  const [view, setView] = useState('grid')
-  const [sort, setSort] = useState('created')
+  // UX-04：视图/排序从上次会话恢复（默认网格 + 添加时间）
+  const [uiPrefs] = useState(loadUiPrefs)
+  const [view, setView] = useState(uiPrefs.view)
+  const [sort, setSort] = useState(uiPrefs.sort)
   // N4：多选模式与已选集
   const [selectionMode, setSelectionMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   // B-03：应用内对话框状态（替换原生 confirm / 不受支持的 window.prompt）
-  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
   const [tagsDialogOpen, setTagsDialogOpen] = useState(false)
+  // 删除确认目标（批量 = 选中集合；单个 = 右键菜单目标）
+  const [removeTarget, setRemoveTarget] = useState(null)
+  // UX-02：右键菜单状态 { x, y, anime }
+  const [menu, setMenu] = useState(null)
+
+  // UX-04：视图/排序/状态筛选变化时持久化。
+  // 注意：状态筛选的「恢复」在 App.jsx 初始化时完成——若在 Library 挂载时恢复，
+  // 用户在其他页面（Library 已卸载）通过侧栏切换筛选后返回，会被旧的持久化值覆盖
+  useEffect(() => {
+    try {
+      localStorage.setItem(UI_PREF_KEY, JSON.stringify({ view, sort, status: filter.status || 'all' }))
+    } catch (e) {
+      /* localStorage 不可用时忽略 */
+    }
+  }, [view, sort, filter.status])
 
   // P3：搜索词延迟更新，避免每次输入触发全库过滤重算
   const deferredQuery = useDeferredValue(filter.query || '')
@@ -120,6 +158,10 @@ export default function Library({ filter, setFilter }) {
   const gridWrapRef = useRef(null)
   const [gridView, setGridView] = useState({ width: 0, height: 0, scrollTop: 0 })
 
+  // —— PF-01 列表视图虚拟滚动：行高固定 64px，仅渲染可视窗口 + overscan ——
+  const listWrapRef = useRef(null)
+  const [listView, setListView] = useState({ height: 0, scrollTop: 0 })
+
   // P6：网格容器仅在「网格视图且有内容」时挂载（空库时显示引导页）。
   // 原先 effect 只依赖 [view]，空库启动时 ref 还是 null、观察器没挂上，
   // 扫描完成网格首次出现后无人测量宽度（width=0 → 列数/行高全错，虚拟滚动失效）。
@@ -135,6 +177,32 @@ export default function Library({ filter, setFilter }) {
     ro.observe(el)
     return () => ro.disconnect()
   }, [gridMounted])
+
+  // PF-01：列表容器测量（与网格同理，仅在列表视图有内容时挂载）
+  const listMounted = view === 'list' && library.length > 0 && items.length > 0
+  useEffect(() => {
+    if (!listMounted) return
+    const el = listWrapRef.current
+    if (!el) return
+    const update = () => setListView((s) => ({ ...s, height: el.clientHeight }))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [listMounted])
+
+  // PF-01：可视窗口行切片（前后各 overscan 行，缓解快速滚动白屏）
+  const listRows = useMemo(() => {
+    const total = sortedItems.length
+    const start = Math.max(0, Math.floor(listView.scrollTop / LIST_ROW_H) - LIST_OVERSCAN)
+    const end = Math.min(
+      total,
+      Math.ceil((listView.scrollTop + listView.height) / LIST_ROW_H) + LIST_OVERSCAN
+    )
+    const rows = []
+    for (let i = start; i < end; i++) rows.push({ index: i, a: sortedItems[i] })
+    return rows
+  }, [listView, sortedItems])
 
   // P4-4：网格行间距与 CSS --spacer-16 保持一致，随界面密度同步（保证虚拟滚动行定位不漂移）
   const gridGap = settings?.uiDensity === '紧凑' ? 13 : settings?.uiDensity === '宽松' ? 19 : 16
@@ -158,7 +226,8 @@ export default function Library({ filter, setFilter }) {
 
   const handlePlay = (e, a) => {
     e.stopPropagation()
-    const ep = nextEpisode(a)
+    // B-09d：全部已看时 nextEpisode 为 null——回退播放第一集，避免点击无响应
+    const ep = nextEpisode(a) || (a.episodes || [])[0]
     if (ep) navigate(`/player/${a.id}/${ep.id}`)
   }
 
@@ -197,14 +266,65 @@ export default function Library({ filter, setFilter }) {
     showToast(`已对 ${count} 部番剧执行批量操作`, 'success')
   }
   // B-03：批量删除改为对话框确认（原生 confirm 在 frameless 窗口下样式割裂）
+  // removeTarget：待删除的 ID 集合（批量 = 选中集；单个 = 右键菜单目标）
   const handleBatchRemove = () => {
     if (!selected.size) return
-    setConfirmRemoveOpen(true)
+    setRemoveTarget([...selected])
   }
   const confirmBatchRemove = async () => {
-    setConfirmRemoveOpen(false)
-    await runBatch('remove')
+    const ids = removeTarget || []
+    setRemoveTarget(null)
+    if (!ids.length) return
+    await batchAnime('remove', ids)
+    setSelected(new Set())
     setSelectionMode(false)
+    showToast(`已删除 ${ids.length} 部番剧`, 'success')
+  }
+  const removeCount = removeTarget ? removeTarget.length : 0
+
+  // —— UX-02：右键上下文菜单 ——
+  const openMenu = (e, a) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenu({ x: e.clientX, y: e.clientY, anime: a })
+  }
+  const buildMenuItems = (a) => {
+    const eps = a.episodes || []
+    // 播放目标：断点续看 > 首个未看 > 第一集（全部已看时从头播放）
+    const ep = nextEpisode(a) || eps[0]
+    const items = []
+    if (ep) {
+      items.push({
+        label: `播放 EP${ep.number ?? 1}`,
+        onClick: () => navigate(`/player/${a.id}/${ep.id}`)
+      })
+    }
+    items.push({ label: '查看详情', onClick: () => navigate(`/anime/${a.id}`) })
+    items.push({ separator: true })
+    items.push({
+      label: '标记为已看',
+      onClick: async () => {
+        await batchAnime('mark-watched', [a.id])
+        showToast(`已将「${a.title}」标记为已看`, 'success')
+      }
+    })
+    items.push({
+      label: '标记为未看',
+      onClick: async () => {
+        await batchAnime('mark-unwatched', [a.id])
+        showToast(`已将「${a.title}」标记为未看`, 'info')
+      }
+    })
+    items.push({
+      label: a.isFavorite ? '取消收藏' : '收藏',
+      onClick: () => updateAnime(a.id, { isFavorite: !a.isFavorite })
+    })
+    if (a.path) {
+      items.push({ label: '打开所在文件夹', onClick: () => api?.openFolder?.(a.path) })
+    }
+    items.push({ separator: true })
+    items.push({ label: '删除', danger: true, onClick: () => setRemoveTarget([a.id]) })
+    return items
   }
   // B-03：批量标签改为应用内输入对话框（Electron 不支持 window.prompt，原实现静默失效）
   const handleBatchTags = () => {
@@ -409,6 +529,7 @@ export default function Library({ filter, setFilter }) {
                           className={'anime-card' + (selected.has(a.id) ? ' is-selected' : '')}
                           key={a.id}
                           onClick={() => (selectionMode ? toggleSelect(a.id) : navigate(`/anime/${a.id}`))}
+                          onContextMenu={(e) => openMenu(e, a)}
                         >
                           {selectionMode && (
                             <div className={'anime-card__select' + (selected.has(a.id) ? ' is-on' : '')}>
@@ -464,7 +585,15 @@ export default function Library({ filter, setFilter }) {
                 </div>
               </div>
             ) : (
-              <div className="anime-list-wrap">
+              <div
+                className="anime-list-wrap"
+                ref={listWrapRef}
+                onScroll={(e) => {
+                  // P6 白屏卡死修复同款：必须在事件分发期间同步读取 currentTarget
+                  const st = e.currentTarget.scrollTop
+                  setListView((s) => ({ ...s, scrollTop: st }))
+                }}
+              >
                 <div className="anime-list">
                   <div className="anime-list__header">
                     <span>#</span>
@@ -475,36 +604,41 @@ export default function Library({ filter, setFilter }) {
                     <span>进度</span>
                     <span>评分</span>
                   </div>
-                  {sortedItems.map((a, i) => (
-                    <div
-                      className={'anime-list__row' + (selected.has(a.id) ? ' is-selected' : '')}
-                      key={a.id}
-                      onClick={() => (selectionMode ? toggleSelect(a.id) : navigate(`/anime/${a.id}`))}
-                    >
-                      <span className="anime-list__index">{i + 1}</span>
-                      <div className="anime-list__thumb">
-                        <Poster anime={a} as="span" />
+                  {/* PF-01：列表虚拟滚动——仅渲染可视窗口行，DOM 节点数与库规模解耦 */}
+                  <div style={{ position: 'relative', height: sortedItems.length * LIST_ROW_H }}>
+                    {listRows.map(({ index, a }) => (
+                      <div
+                        className={'anime-list__row' + (selected.has(a.id) ? ' is-selected' : '')}
+                        key={a.id}
+                        style={{ position: 'absolute', top: index * LIST_ROW_H, left: 0, right: 0 }}
+                        onClick={() => (selectionMode ? toggleSelect(a.id) : navigate(`/anime/${a.id}`))}
+                        onContextMenu={(e) => openMenu(e, a)}
+                      >
+                        <span className="anime-list__index">{index + 1}</span>
+                        <div className="anime-list__thumb">
+                          <Poster anime={a} as="span" />
+                        </div>
+                        <span className="anime-list__title">{a.title}</span>
+                        <div className="anime-list__genres">
+                          {(a.genres || []).slice(0, 2).map((g) => (
+                            <span className="ds-tag ds-tag--neutral-strong" key={g}>{g}</span>
+                          ))}
+                        </div>
+                        <span className={'ds-tag ' + (STATUS_TAG_CLASS[a.status] || '')}>
+                          {STATUS_LABEL[a.status] || a.status}
+                        </span>
+                        <div className="anime-list__bar">
+                          <div className="anime-list__bar-fill" style={{ width: progressPct(a) + '%' }} />
+                        </div>
+                        <div className="anime-list__rating">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="icon">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                          {formatRating(a.rating, settings?.ratingSystem)}
+                        </div>
                       </div>
-                      <span className="anime-list__title">{a.title}</span>
-                      <div className="anime-list__genres">
-                        {(a.genres || []).slice(0, 2).map((g) => (
-                          <span className="ds-tag ds-tag--neutral-strong" key={g}>{g}</span>
-                        ))}
-                      </div>
-                      <span className={'ds-tag ' + (STATUS_TAG_CLASS[a.status] || '')}>
-                        {STATUS_LABEL[a.status] || a.status}
-                      </span>
-                      <div className="anime-list__bar">
-                        <div className="anime-list__bar-fill" style={{ width: progressPct(a) + '%' }} />
-                      </div>
-                      <div className="anime-list__rating">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="icon">
-                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                        </svg>
-                        {formatRating(a.rating, settings?.ratingSystem)}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -512,15 +646,15 @@ export default function Library({ filter, setFilter }) {
         )}
       </div>
 
-      {/* B-03：批量删除确认 / 批量标签输入（应用内对话框） */}
+      {/* B-03：删除确认 / 批量标签输入（应用内对话框） */}
       <ConfirmDialog
-        open={confirmRemoveOpen}
+        open={Boolean(removeTarget)}
         title="删除番剧"
-        description={`确定删除选中的 ${selected.size} 部番剧吗？此操作不可恢复。`}
+        description={`确定删除选中的 ${removeCount} 部番剧吗？此操作不可恢复。`}
         confirmText="删除"
         danger
         onConfirm={confirmBatchRemove}
-        onCancel={() => setConfirmRemoveOpen(false)}
+        onCancel={() => setRemoveTarget(null)}
       />
       <PromptDialog
         open={tagsDialogOpen}
@@ -530,6 +664,14 @@ export default function Library({ filter, setFilter }) {
         suggestions={allTags.slice(0, 30)}
         onConfirm={confirmBatchTags}
         onCancel={() => setTagsDialogOpen(false)}
+      />
+
+      {/* UX-02：右键上下文菜单 */}
+      <ContextMenu
+        x={menu?.x}
+        y={menu?.y}
+        items={menu ? buildMenuItems(menu.anime) : []}
+        onClose={() => setMenu(null)}
       />
     </div>
   )

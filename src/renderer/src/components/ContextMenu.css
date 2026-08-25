@@ -1,0 +1,46 @@
+/* 右键上下文菜单（UX-02） */
+
+.app-contextmenu {
+  position: fixed;
+  z-index: 300;
+  min-width: 160px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-4);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.app-contextmenu__item {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 var(--spacer-10);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-4);
+  color: var(--text-default);
+  font-size: var(--body-sm-font-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-contextmenu__item:hover {
+  background: var(--bg-overlay-l2);
+}
+
+.app-contextmenu__item.is-danger {
+  color: var(--status-error-default);
+}
+
+.app-contextmenu__item.is-danger:hover {
+  background: var(--status-error-surface-l1);
+}
+
+.app-contextmenu__separator {
+  height: 1px;
+  margin: 4px var(--spacer-6);
+  background: var(--border-neutral-l1);
+}

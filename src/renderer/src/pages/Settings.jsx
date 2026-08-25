@@ -17,6 +17,7 @@ const DEFAULTS = {
   autoNextEpisode: true,
   skipOpEd: true,
   hardwareDecode: true,
+  externalPlayerPath: '',
   defaultPlaySpeed: 1.0,
   subtitleFontSize: 'medium',
   subtitleFont: '思源黑体',
@@ -402,6 +403,39 @@ export default function Settings() {
                   title="硬件加速解码"
                   desc="使用 GPU 硬件加速视频解码（即将支持）"
                   control={<Switch checked={settings.hardwareDecode} onChange={(v) => set({ hardwareDecode: v })} disabled />}
+                />
+                {/* N-02：外部播放器——内置 <video> 不支持 HEVC/Hi10P 等编码，配置后可在播放页一键唤起 */}
+                <SettingRow
+                  title="外部播放器"
+                  desc={
+                    settings.externalPlayerPath
+                      ? `已配置：${settings.externalPlayerPath}（播放页可一键唤起，适合 HEVC/Hi10P 等内置播放器不支持的编码）`
+                      : '未配置。配置 mpv / VLC 等播放器后，可在播放页用外部播放器打开（适合 HEVC/Hi10P 等内置播放器不支持的编码）'
+                  }
+                  control={
+                    <div className="settings-player-row">
+                      <button
+                        className="ds-btn ds-btn--secondary"
+                        onClick={async () => {
+                          const p = await api.pickExecutable()
+                          if (p) {
+                            set({ externalPlayerPath: p })
+                            showToast('外部播放器已配置', 'success')
+                          }
+                        }}
+                      >
+                        选择程序…
+                      </button>
+                      {settings.externalPlayerPath && (
+                        <button
+                          className="ds-btn ds-btn--link"
+                          onClick={() => set({ externalPlayerPath: '' })}
+                        >
+                          清除
+                        </button>
+                      )}
+                    </div>
+                  }
                 />
                 <SettingRow
                   title="默认播放速度"

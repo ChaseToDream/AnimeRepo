@@ -56,3 +56,38 @@ export async function cacheCover(coverUrl) {
     return coverUrl
   }
 }
+
+// N-06：把用户选择的本地图片复制进封面缓存目录，返回 anime://cover URL
+// 文件名用「源路径 + 大小 + mtime」哈希——同一文件重复选择命中缓存，
+// 源文件更新后（size/mtime 变化）生成新名称避免旧缓存干扰
+export async function saveLocalCover(srcPath) {
+  try {
+    if (!srcPath) return ''
+    const dir = getCoverDir()
+    if (!coverDirReady) {
+      coverDirReady = fs.promises.mkdir(dir, { recursive: true }).catch(() => {})
+    }
+    await coverDirReady
+    const stat = await fs.promises.stat(srcPath)
+    const hash = crypto
+      .createHash('md5')
+      .update(`${srcPath}|${stat.size}|${stat.mtimeMs}`)
+      .digest('hex')
+    const extMatch = srcPath.split('?')[0].match(COVER_EXTS)
+    const ext = extMatch ? extMatch[0] : '.jpg'
+    const file = join(dir, hash + ext)
+    let cached = false
+    try {
+      await fs.promises.access(file)
+      cached = true
+    } catch {
+      cached = false
+    }
+    if (!cached) {
+      await fs.promises.copyFile(srcPath, file)
+    }
+    return 'anime://cover/' + Buffer.from(hash + ext, 'utf-8').toString('base64url')
+  } catch (e) {
+    return ''
+  }
+}

@@ -68,6 +68,37 @@ export function AppProvider({ children }) {
     refresh()
   }, [refresh])
 
+  // PF-02：增量合并工具——{ upserts, removedIds } 本地合并，
+  // 替代原先「每次操作接收全量库再 setLibrary」的模式（大库 ≈ 10MB 级 IPC 开销）
+  const applyDelta = useCallback((delta) => {
+    if (!delta) return
+    const { upserts, removedIds } = delta
+    if (!upserts?.length && !removedIds?.length) return
+    setLibrary((prev) => {
+      let next = prev
+      if (removedIds?.length) {
+        const removeSet = new Set(removedIds)
+        next = next.filter((a) => !removeSet.has(a.id))
+      }
+      if (upserts?.length) {
+        const upsertMap = new Map(upserts.map((a) => [a.id, a]))
+        next = next.map((a) => upsertMap.get(a.id) || a)
+        // 新增条目（库中尚不存在）追加到末尾
+        for (const a of upserts) {
+          if (!next.some((x) => x.id === a.id)) next = [...next, a]
+        }
+      }
+      return next
+    })
+  }, [])
+
+  // PF-02：订阅后台自动扫描的库变更——此前后台扫描结果对 UI 不可见，
+  // 需等用户手动刷新才能看到新增番剧/剧集
+  useEffect(() => {
+    if (!api?.onLibraryChanged) return undefined
+    return api.onLibraryChanged((delta) => applyDelta(delta))
+  }, [applyDelta])
+
   // B6：强调色在应用启动时即应用（不再依赖进入设置页），设置变更时同步生效
   useEffect(() => {
     if (settings?.accentColor) {
@@ -108,15 +139,17 @@ export function AppProvider({ children }) {
 
   // O4：扫描进度订阅已迁移至 ScanProgressProvider（独立 Context，见文件头部说明）
 
-  // 启动时（若开启自动扫描且无数据）执行一次初始扫描
+  // B-05 修复：启动时自动扫描——设置语义为「每次启动应用时自动扫描」，
+  // 原实现加了 library.length === 0 条件导致仅首次生效；现按设置真实触发。
+  // O-01 的增量扫描缓存（含磁盘持久化）保证了重启扫描也只遍历变更目录，开销可控。
   useEffect(() => {
     async function maybeAutoScan() {
       if (loading) return
-      if (settings?.autoScanOnStartup && library.length === 0) {
+      if (settings?.autoScanOnStartup && (settings?.libraryFolders || []).length > 0) {
         try {
           setScanning(true)
           const res = await api.scanLibrary()
-          if (res && !res.skipped) setLibrary(res.animes)
+          if (res && !res.skipped) applyDelta(res)
         } catch (e) {
           // 忽略
         } finally {
@@ -138,18 +171,23 @@ export function AppProvider({ children }) {
         if (res.skipped) {
           showToast('已有扫描正在进行，请稍候', 'info')
         } else {
-          setLibrary(res.animes)
-          showToast(
-            `扫描完成：新增 ${res.added || 0} 部，更新 ${res.updated || 0} 部${res.removed ? `，移除 ${res.removed} 部` : ''}`,
-            'success'
-          )
+          // PF-02：增量合并（changedAnimes / removedIds），不再接收全量库
+          applyDelta(res)
+          if (res.aborted) {
+            showToast('扫描已取消（已完成的变更已保留）', 'info')
+          } else {
+            showToast(
+              `扫描完成：新增 ${res.added || 0} 部，更新 ${res.updated || 0} 部${res.removed ? `，移除 ${res.removed} 部` : ''}`,
+              'success'
+            )
+          }
         }
       }
       return res
     } finally {
       setScanning(false)
     }
-  }, [showToast])
+  }, [showToast, applyDelta])
 
   const getAnime = useCallback((id) => library.find((a) => a.id === id) || null, [library])
 
@@ -169,23 +207,32 @@ export function AppProvider({ children }) {
     setLibrary((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
-  // N4：批量操作（返回更新后的库）
+  // N4：批量操作（PF-02：主进程返回增量，本地合并）
   const batchAnime = useCallback(async (action, ids, payload) => {
-    const updated = await api.batchAnime({ action, ids, payload })
-    if (updated) setLibrary(updated)
-    return updated
-  }, [])
+    const delta = await api.batchAnime({ action, ids, payload })
+    applyDelta(delta)
+    return delta
+  }, [applyDelta])
 
-  // N3：合并 / 拆分番剧
+  // N3：合并 / 拆分番剧（PF-02：增量合并）
   const mergeAnime = useCallback(async (fromId, toId) => {
-    const updated = await api.mergeAnime(fromId, toId)
-    if (updated) setLibrary(updated)
-    return updated
-  }, [])
+    const delta = await api.mergeAnime(fromId, toId)
+    applyDelta(delta)
+    return delta
+  }, [applyDelta])
 
   const splitAnime = useCallback(async (fromId, epIds, newTitle) => {
-    const updated = await api.splitAnime(fromId, epIds, newTitle)
-    if (updated) setLibrary(updated)
+    const delta = await api.splitAnime(fromId, epIds, newTitle)
+    applyDelta(delta)
+    return delta
+  }, [applyDelta])
+
+  // N-06：设置本地封面（主进程复制进封面缓存目录并更新 coverUrl）
+  const setAnimeCover = useCallback(async (id, filePath) => {
+    const updated = await api.setAnimeCover(id, filePath)
+    if (updated) {
+      setLibrary((prev) => prev.map((a) => (a.id === id ? updated : a)))
+    }
     return updated
   }, [])
 
@@ -252,6 +299,7 @@ export function AppProvider({ children }) {
       batchAnime,
       mergeAnime,
       splitAnime,
+      setAnimeCover,
       setProgress,
       setProgressSilent,
       setWatched,
@@ -278,6 +326,7 @@ export function AppProvider({ children }) {
       batchAnime,
       mergeAnime,
       splitAnime,
+      setAnimeCover,
       setProgress,
       setProgressSilent,
       setWatched,

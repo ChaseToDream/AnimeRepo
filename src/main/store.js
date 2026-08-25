@@ -19,6 +19,8 @@ const DEFAULT_SETTINGS = {
   autoNextEpisode: true,
   skipOpEd: true,
   hardwareDecode: true,
+  // N-02：外部播放器程序路径（空 = 使用内置播放器）
+  externalPlayerPath: '',
   defaultPlaySpeed: 1.0,
   subtitleFontSize: 'medium',
   subtitleFont: '思源黑体',

@@ -119,6 +119,13 @@
   background: transparent;
 }
 
+/* N-02：外部播放器配置按钮组 */
+.settings-player-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
 /* ===== 底部操作条 ===== */
 .settings-footer {
   flex-shrink: 0;

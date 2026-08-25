@@ -3,7 +3,7 @@ import { Routes, Route, Outlet, NavLink, useLocation } from 'react-router-dom'
 import { AppProvider, useApp, useScanProgress } from './store/AppContext'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
-import Library from './pages/Library'
+import Library, { loadUiPrefs } from './pages/Library'
 import Detail from './pages/Detail'
 import Player from './pages/Player'
 import Stats from './pages/Stats'
@@ -70,7 +70,7 @@ function ScanStatusText() {
 
 // 带侧边栏的外壳布局（番剧库 / 统计 / 设置）
 function ShellLayout({ onFilterChange, activeFilter }) {
-  const { library, settings, scanning, t } = useApp()
+  const { library, settings, scanning, t, api } = useApp()
   const location = useLocation()
   const totalEpisodes = library.reduce((n, a) => n + (a.episodes?.length || 0), 0)
   const isStats = location.pathname.startsWith('/stats')
@@ -100,6 +100,16 @@ function ShellLayout({ onFilterChange, activeFilter }) {
           <span className="ds-statusbar__item">
             <span className="ds-statusbar__dot" style={{ background: scanning ? 'var(--status-warning-default)' : 'var(--status-success-default)' }} />
             {scanText}
+            {/* UX-03：扫描中提供取消入口（已完成阶段的变更会保留） */}
+            {scanning && (
+              <button
+                className="ds-btn ds-btn--sm ds-btn--tertiary"
+                style={{ height: 18, marginLeft: 6, fontSize: 11 }}
+                onClick={() => api?.cancelScan?.()}
+              >
+                取消
+              </button>
+            )}
           </span>
           {!isSettings && (
             <span
@@ -143,7 +153,13 @@ function ShellLayout({ onFilterChange, activeFilter }) {
 }
 
 function App() {
-  const [filter, setFilter] = useState({ status: 'all', genre: '', query: '', tag: '' })
+  // UX-04：状态筛选从上次会话恢复（仅初始化一次，避免覆盖运行中的筛选切换）
+  const [filter, setFilter] = useState(() => {
+    const prefs = loadUiPrefs()
+    const valid = ['all', 'watching', 'completed', 'plan', 'onhold', 'recent']
+    const status = valid.includes(prefs.status) ? prefs.status : 'all'
+    return { status, genre: '', query: '', tag: '' }
+  })
   const handleFilterChange = (passedKey, passedValue) => {
     // Sidebar 回调：onFilterChange(filterKey, queryOrGenre)
     if (passedValue && passedKey === 'genre') {

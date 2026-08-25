@@ -14,11 +14,19 @@ const api = {
   getLibrary: () => ipcRenderer.invoke('library:get'),
   getAnime: (id) => ipcRenderer.invoke('library:get-one', id),
   scanLibrary: () => ipcRenderer.invoke('library:scan'),
+  // UX-03：取消当前手动扫描
+  cancelScan: () => ipcRenderer.send('scan:cancel'),
   // 订阅扫描进度事件，返回取消订阅函数
   onScanProgress: (cb) => {
     const listener = (_e, info) => cb(info)
     ipcRenderer.on('scan:progress', listener)
     return () => ipcRenderer.removeListener('scan:progress', listener)
+  },
+  // PF-02：订阅后台扫描的库变更增量事件，返回取消订阅函数
+  onLibraryChanged: (cb) => {
+    const listener = (_e, delta) => cb(delta)
+    ipcRenderer.on('library:changed', listener)
+    return () => ipcRenderer.removeListener('library:changed', listener)
   },
   updateAnime: (id, patch) => ipcRenderer.invoke('anime:update', id, patch),
   removeAnime: (id) => ipcRenderer.invoke('anime:remove', id),
@@ -42,6 +50,12 @@ const api = {
   // —— 系统 ——
   openFolder: (p) => ipcRenderer.invoke('shell:open-folder', p),
   getVersion: () => ipcRenderer.invoke('app:version'),
+  // —— N-02：外部播放器 ——
+  openExternalPlayer: (filePath) => ipcRenderer.invoke('player:open-external', filePath),
+  pickExecutable: () => ipcRenderer.invoke('dialog:pick-executable'),
+  // —— N-06：封面 ——
+  pickImage: () => ipcRenderer.invoke('dialog:pick-image'),
+  setAnimeCover: (id, filePath) => ipcRenderer.invoke('anime:set-cover', id, filePath),
   // —— 字幕 ——
   readSubtitle: (filePath) => ipcRenderer.invoke('subtitle:read', filePath),
   // —— 窗口控制 ——

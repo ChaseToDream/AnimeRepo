@@ -510,6 +510,31 @@
 }
 .manage-row .ds-select,
 .manage-row .ds-input { flex: 1; }
+
+/* N-06：编辑弹窗封面预览 */
+.detail-edit-cover {
+  width: 40px;
+  height: 56px;
+  border-radius: var(--radius-4);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--bg-overlay-l2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.detail-edit-cover img,
+.detail-edit-cover span {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 9px;
+  text-align: center;
+}
 .edit-field__hint {
   margin: 0;
   font-size: var(--body-xs-font-size);

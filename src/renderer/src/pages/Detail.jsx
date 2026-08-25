@@ -26,7 +26,7 @@ const TABS = [
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { library, getAnime, updateAnime, setWatched, mergeAnime, splitAnime, batchAnime, showToast, settings } = useApp()
+  const { library, getAnime, updateAnime, setWatched, mergeAnime, splitAnime, batchAnime, showToast, settings, setAnimeCover, api } = useApp()
 
   const anime = getAnime(id)
 
@@ -37,6 +37,9 @@ export default function Detail() {
   const [editOpen, setEditOpen] = useState(false)
   const [formDesc, setFormDesc] = useState('')
   const [formRating, setFormRating] = useState('')
+  // N-06：编辑弹窗扩展字段（标题 / 标签）
+  const [formTitle, setFormTitle] = useState('')
+  const [formTags, setFormTags] = useState('')
   // N3：管理弹窗（合并 / 拆分）
   const [manageOpen, setManageOpen] = useState(false)
   const [mergeTarget, setMergeTarget] = useState('')
@@ -93,16 +96,33 @@ export default function Detail() {
     updateAnime(anime.id, { isFavorite: next })
   }
   const openEdit = () => {
+    setFormTitle(anime.title || '')
     setFormDesc(anime.description || '')
     setFormRating(anime.rating ? String(anime.rating) : '')
+    setFormTags((anime.tags || []).join(', '))
     setEditOpen(true)
   }
+  // N-06：保存标题（主进程联动重算 titleKey）/ 标签 / 评分 / 简介
   const saveEdit = async () => {
+    const title = formTitle.trim()
+    const tags = (formTags || '')
+      .split(/[,，\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
     await updateAnime(anime.id, {
+      ...(title ? { title } : {}),
       description: formDesc,
-      rating: Number(formRating) || 0
+      rating: Number(formRating) || 0,
+      tags
     })
     setEditOpen(false)
+  }
+  // N-06：选择本地图片作为封面（主进程复制进封面缓存目录）
+  const pickCover = async () => {
+    const filePath = await api.pickImage()
+    if (!filePath) return
+    const updated = await setAnimeCover(anime.id, filePath)
+    showToast(updated ? '封面已更新' : '封面更新失败', updated ? 'success' : 'error')
   }
 
   // —— N3 合并 / 拆分 ——
@@ -493,6 +513,38 @@ export default function Detail() {
             </div>
             <div className="ds-dialog__body">
               <div className="edit-form">
+                {/* N-06：标题编辑（主进程自动同步 titleKey，改名后重扫不会产生重复条目） */}
+                <div className="edit-field">
+                  <label className="edit-field__label">标题</label>
+                  <input
+                    type="text"
+                    value={formTitle}
+                    placeholder="番剧标题"
+                    onChange={(e) => setFormTitle(e.target.value)}
+                  />
+                </div>
+                {/* N-06：封面更换（本地图片复制进封面缓存，离线可用） */}
+                <div className="edit-field">
+                  <label className="edit-field__label">封面</label>
+                  <div className="manage-row">
+                    <div className="detail-edit-cover">
+                      <Poster anime={anime} as="span" />
+                    </div>
+                    <button className="ds-btn ds-btn--secondary ds-btn--sm" onClick={pickCover}>
+                      选择本地图片…
+                    </button>
+                  </div>
+                </div>
+                {/* N-06：标签编辑（逗号分隔，保存后可用于侧栏筛选） */}
+                <div className="edit-field">
+                  <label className="edit-field__label">标签（用逗号分隔）</label>
+                  <input
+                    type="text"
+                    value={formTags}
+                    placeholder="例如：神作, 治愈, 2024"
+                    onChange={(e) => setFormTags(e.target.value)}
+                  />
+                </div>
                 <div className="edit-field">
                   <label className="edit-field__label">我的评分（0-10）</label>
                   <input

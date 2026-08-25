@@ -41,11 +41,25 @@ async function runOnce() {
     const after = countEpisodes()
     const addedAnime = res.added || 0
     const updatedAnime = res.updated || 0
+    const removedAnime = res.removed || 0
     const newEpisodes = Math.max(0, after - before)
-    if (addedAnime > 0 || updatedAnime > 0) {
+    // PF-02：后台扫描的变更以增量事件推送给渲染进程本地合并——
+    // 此前后台扫描结果对 UI 完全不可见，需手动刷新才能看到新增番剧
+    if ((res.changedAnimes && res.changedAnimes.length) || (res.removedIds && res.removedIds.length)) {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('library:changed', {
+            upserts: res.changedAnimes || [],
+            removedIds: res.removedIds || []
+          })
+        }
+      }
+    }
+    if (addedAnime > 0 || updatedAnime > 0 || removedAnime > 0) {
       const parts = []
       if (addedAnime) parts.push(`发现 ${addedAnime} 部新番剧`)
       if (updatedAnime) parts.push(`${updatedAnime} 部番剧更新${newEpisodes ? `（新增 ${newEpisodes} 集）` : ''}`)
+      if (removedAnime) parts.push(`移除 ${removedAnime} 部失效条目`)
       notify('AnimeRepo · 媒体库更新', parts.join('，'))
     }
   } catch (e) {

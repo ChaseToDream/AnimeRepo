@@ -2,7 +2,7 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import { shell } from 'electron'
+import { app, shell } from 'electron'
 import { parseFilename, parseWithRegex, titleKey } from './parser'
 import { offlineDefaults, fetchOnline } from './metadata'
 import { cacheCover } from './coverCache'
@@ -67,8 +67,74 @@ async function findSubtitles(videoFile, folder, dirCache) {
   }
 }
 
+// ===== O-01：增量扫描缓存 =====
+// 目录级 mtime 缓存：目录的 mtime 在其直接子项增删/改名时变化，
+// 因此「mtime 未变 ⇒ 该目录的直接文件列表未变」成立（文件内容变更不影响扫描结果）。
+// 复扫时对未变化目录跳过 readdir（大库主要开销），仅保留每目录一次 stat。
+// 缓存持久化到 userData/scan-cache.json，重启后启动扫描同样走增量路径。
+// signature：视频格式 + 扫描深度任一变化时缓存整体失效（遍历形态改变）。
+let dirStatCache = new Map()
+let scanCacheSignature = ''
+let scanCacheLoaded = false
+let scanCacheSaveTimer = null
+
+function scanCacheFile() {
+  return path.join(app.getPath('userData'), 'scan-cache.json')
+}
+
+function computeScanSignature(settings) {
+  return JSON.stringify([
+    (settings && settings.videoFormats) || [],
+    (settings && settings.scanDepth) || ''
+  ])
+}
+
+// 惰性加载磁盘缓存（失败静默回退全量扫描）
+function loadScanCache(settings) {
+  const sig = computeScanSignature(settings)
+  if (!scanCacheLoaded) {
+    scanCacheLoaded = true
+    try {
+      const raw = JSON.parse(fs.readFileSync(scanCacheFile(), 'utf-8'))
+      if (raw && raw.signature === sig && raw.dirs && typeof raw.dirs === 'object') {
+        for (const [dir, ent] of Object.entries(raw.dirs)) {
+          if (ent && typeof ent.m === 'number' && Array.isArray(ent.v) && Array.isArray(ent.s)) {
+            dirStatCache.set(dir, { mtimeMs: ent.m, videos: ent.v, subdirs: ent.s })
+          }
+        }
+      }
+    } catch (e) {
+      /* 无缓存文件或损坏：全量扫描 */
+    }
+  }
+  // 设置签名变化（或磁盘缓存属旧签名）：整体失效
+  if (sig !== scanCacheSignature) {
+    dirStatCache = new Map()
+    scanCacheSignature = sig
+  }
+}
+
+// 防抖持久化：扫描结束后调用；序列化体积为 目录数×路径，远小于媒体库本体
+function scheduleScanCacheSave() {
+  if (scanCacheSaveTimer) return
+  scanCacheSaveTimer = setTimeout(() => {
+    scanCacheSaveTimer = null
+    try {
+      const dirs = {}
+      for (const [dir, ent] of dirStatCache) {
+        dirs[dir] = { m: ent.mtimeMs, v: ent.videos, s: ent.subdirs }
+      }
+      const payload = JSON.stringify({ signature: scanCacheSignature, dirs })
+      fs.writeFile(scanCacheFile(), payload, 'utf-8', () => {})
+    } catch (e) {
+      /* 保存失败不影响扫描 */
+    }
+  }, 2000)
+}
+
 // 异步递归遍历（P4-1：readdirSync → readdir 异步，避免大库扫描阻塞主进程）
 // options：{ maxDepth, isVideo } —— maxDepth 限制子目录层级（null 不设限），isVideo 自定义视频判定
+// O-01：接入目录级增量缓存——目录 mtime 未变时复用缓存的视频/子目录列表，跳过 readdir
 async function walkFiles(root, options, onFile) {
   const { maxDepth, isVideo } = options || {}
   const stack = [{ dir: root, depth: 0 }]
@@ -81,12 +147,30 @@ async function walkFiles(root, options, onFile) {
     const key = path.resolve(dir)
     if (visited.has(key)) continue
     visited.add(key)
+    // O-01：目录 mtime 校验——缓存命中则跳过 readdir（缓存中的子目录仍会递归校验）
+    let stat
+    try {
+      stat = await fs.promises.stat(dir)
+    } catch (e) {
+      continue
+    }
+    const cached = dirStatCache.get(key)
+    if (cached && cached.mtimeMs === stat.mtimeMs.getTime()) {
+      for (const f of cached.videos) onFile(f)
+      if (maxDepth == null || depth < maxDepth) {
+        for (const sub of cached.subdirs) stack.push({ dir: sub, depth: depth + 1 })
+      }
+      continue
+    }
     let entries
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true })
     } catch (e) {
       continue
     }
+    // O-01：重建该目录缓存（含符号链接环路防护——指向已访问目标的链接不入缓存）
+    const videos = []
+    const subdirs = []
     for (const ent of entries) {
       const full = path.join(dir, ent.name)
       if (ent.isDirectory()) {
@@ -96,13 +180,16 @@ async function walkFiles(root, options, onFile) {
           if (visited.has(real)) continue
           visited.add(real)
         }
+        subdirs.push(full)
         if (maxDepth == null || depth < maxDepth) {
           stack.push({ dir: full, depth: depth + 1 })
         }
       } else if (ent.isFile() && isVideo(ent.name)) {
+        videos.push(full)
         onFile(full)
       }
     }
+    dirStatCache.set(key, { mtimeMs: stat.mtimeMs.getTime(), videos, subdirs })
   }
 }
 
@@ -164,6 +251,33 @@ function makeEpisodeId(animeId, number, filePath, usedIds) {
   return id
 }
 
+// O-01：剧集数组等价判定——文件、字幕、观看进度等关键维度均未变化时，
+// 本次扫描无需写库（跳过 updateAnime）。既消除每轮扫描 N 次全量落盘，
+// 也修正了自动同步「零变化也推送『N 部番剧更新』通知」的误报。
+function episodesEqual(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]
+    const y = b[i]
+    if (
+      x.id !== y.id ||
+      x.number !== y.number ||
+      x.filePath !== y.filePath ||
+      x.title !== y.title ||
+      x.season !== y.season ||
+      x.watched !== y.watched ||
+      x.progress !== y.progress ||
+      x.duration !== y.duration ||
+      x.airDate !== y.airDate ||
+      x.subtitlePath !== y.subtitlePath
+    ) return false
+    const xs = Array.isArray(x.subtitlePaths) ? x.subtitlePaths : []
+    const ys = Array.isArray(y.subtitlePaths) ? y.subtitlePaths : []
+    if (xs.length !== ys.length || xs.some((p, j) => p !== ys[j])) return false
+  }
+  return true
+}
+
 // 并发限流执行器（P4-2：元数据请求并发，避免串行等待）
 async function runPool(items, concurrency, fn) {
   if (!items.length) return
@@ -182,23 +296,30 @@ async function runPool(items, concurrency, fn) {
 // 期间渲染进程还持续接收双份进度推送，是扫描白屏卡死的帮凶。
 let scanRunning = false
 
-// 主扫描：返回新增/更新后的番剧列表
+// 主扫描：返回扫描摘要 + 变更增量（PF-02：不再回传全量库）
 // onProgress：可选进度回调，阶段 collect（已发现文件数）/ metadata（在线元数据下载进度）
-async function scanLibrary(store, folders, settings, onProgress) {
+// signal：可选 AbortSignal（UX-03 扫描可取消）——各阶段边界检查，
+// 取消时已写入的变更保留（均为合法合并），未处理部分跳过并标记 aborted
+async function scanLibrary(store, folders, settings, onProgress, signal) {
   if (scanRunning) {
-    // 已有扫描在进行：直接返回当前库快照，skipped 标记供调用方识别
-    return { scanned: 0, added: 0, updated: 0, removed: 0, skipped: true, animes: store.list() }
+    // 已有扫描在进行：返回跳过标记，调用方不覆盖本地库状态
+    return { scanned: 0, added: 0, updated: 0, removed: 0, skipped: true, changedAnimes: [], removedIds: [] }
   }
   scanRunning = true
   try {
-    return await doScan(store, folders, settings, onProgress)
+    return await doScan(store, folders, settings, onProgress, signal)
   } finally {
     scanRunning = false
   }
 }
 
-async function doScan(store, folders, settings, onProgress) {
+async function doScan(store, folders, settings, onProgress, signal) {
   const result = { scanned: 0, added: 0, updated: 0 }
+  // PF-02：变更增量收集——仅回传发生变化的番剧与被移除的条目 ID，
+  // 渲染层本地合并，避免每次操作经 IPC 传输全量库（大库 ≈ 10MB 级结构化克隆）
+  const changedAnimes = []
+  const removedIds = []
+  const aborted = () => Boolean(signal && signal.aborted)
 
   // B8：按设置构造视频格式判定与扫描深度
   const isVideo = makeVideoTest(settings && settings.videoFormats)
@@ -206,9 +327,13 @@ async function doScan(store, folders, settings, onProgress) {
   const recognizeMode = (settings && settings.recognizeMode) || '自动识别'
   const regexPattern = settings && settings.regexPattern
 
-  // 收集全部文件（P4-1：异步遍历，避免阻塞主进程）
+  // O-01：加载/校验增量扫描缓存（签名变化时自动失效）
+  loadScanCache(settings)
+
+  // 收集全部文件（P4-1：异步遍历；O-01：增量缓存命中目录跳过 readdir）
   const files = []
   for (const folder of folders || []) {
+    if (aborted()) return { ...result, removed: 0, changedAnimes, removedIds, aborted: true }
     try {
       await walkFiles(folder, { maxDepth, isVideo }, (f) => {
         files.push(f)
@@ -274,6 +399,10 @@ async function doScan(store, folders, settings, onProgress) {
       let consecutiveFails = 0
       onProgress?.({ phase: 'metadata', total: pending.length, current: 0 })
       await runPool(pending, METADATA_CONCURRENCY, async (g) => {
+        if (aborted()) {
+          done++
+          return
+        }
         if (consecutiveFails >= METADATA_FAIL_LIMIT) {
           done++
           onProgress?.({ phase: 'metadata', total: pending.length, current: done })
@@ -294,6 +423,8 @@ async function doScan(store, folders, settings, onProgress) {
 
   // 合并写入
   for (const g of groups.values()) {
+    // UX-03：合并阶段边界响应取消——已写入的组保留，剩余组跳过
+    if (aborted()) break
     g.episodes.sort((a, b) => a.number - b.number)
     let anime = store.findByTitleKey(g.titleKey)
     if (anime && Array.isArray(anime.episodes)) {
@@ -316,7 +447,11 @@ async function doScan(store, folders, settings, onProgress) {
         } else {
           id = makeEpisodeId(anime.id, ge.number, ge.file, usedIds)
         }
-        const subs = settings && settings.scanSubtitle ? await findSubtitles(ge.file, g.path, dirCache) : []
+        // B-04 修复：字幕在「剧集文件实际所在目录」查找——原先传组路径（首文件目录，
+        // 遍历顺序随机），番剧剧集分散多目录（Season1/、OVA/ 等）时字幕全部错查
+        const subs = settings && settings.scanSubtitle
+          ? await findSubtitles(ge.file, path.dirname(ge.file), dirCache)
+          : []
         episodes.push({
           id,
           animeId: anime.id,
@@ -332,20 +467,36 @@ async function doScan(store, folders, settings, onProgress) {
           subtitlePaths: subs.length ? subs : (old && Array.isArray(old.subtitlePaths) ? old.subtitlePaths : [])
         })
       }
-      anime = store.updateAnime(anime.id, {
-        episodes,
-        aired: episodes.length,
-        path: g.path,
-        updatedAt: new Date().toISOString()
-      })
-      result.updated++
+      // O-01：无实质变化（文件/字幕/进度全一致）时跳过写库与变更上报，
+      // 避免每轮扫描全量落盘 + 自动同步零变化误报「N 部番剧更新」
+      if (
+        !episodesEqual(episodes, anime.episodes) ||
+        anime.path !== g.path
+      ) {
+        anime = store.updateAnime(anime.id, {
+          episodes,
+          aired: episodes.length,
+          path: g.path,
+          updatedAt: new Date().toISOString()
+        })
+        changedAnimes.push(anime)
+        result.updated++
+      }
+      result.scanned += g.episodes.length
     } else {
       // 新建番剧
       const id = 'anime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
       let info = offlineDefaults(g.animeTitle, g.season, g.episodes.length)
       // N6：本地 NFO 信息优先（preferLocalInfo 开启时）
+      // B-04 修复：剧集分散多目录时，逐个候选目录探测 NFO（原先只查组路径即首文件目录）
       let localInfo = null
-      if (settings && settings.preferLocalInfo) localInfo = await readLocalInfo(g.path, settings.infoFormats)
+      if (settings && settings.preferLocalInfo) {
+        const candidateDirs = [...new Set(g.episodes.map((e) => path.dirname(e.file)))]
+        for (const dir of candidateDirs) {
+          localInfo = await readLocalInfo(dir, settings.infoFormats)
+          if (localInfo) break
+        }
+      }
       if (localInfo) info = { ...info, ...localInfo }
       // 在线元数据补充（preferLocalInfo 时本地字段优先，否则在线覆盖默认）
       const online = onlineCache.get(g.titleKey)
@@ -358,7 +509,10 @@ async function doScan(store, folders, settings, onProgress) {
       // B-01：组内 ID 唯一化（number=0 未分类文件追加路径哈希后缀）
       const usedIds = new Set()
       for (const ge of g.episodes) {
-        const subs = settings && settings.scanSubtitle ? await findSubtitles(ge.file, g.path, dirCache) : []
+        // B-04：字幕在剧集文件实际所在目录查找
+        const subs = settings && settings.scanSubtitle
+          ? await findSubtitles(ge.file, path.dirname(ge.file), dirCache)
+          : []
         episodes.push({
           id: makeEpisodeId(id, ge.number, ge.file, usedIds),
           animeId: id,
@@ -398,16 +552,17 @@ async function doScan(store, folders, settings, onProgress) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })
+      changedAnimes.push(anime)
       result.added++
+      result.scanned += g.episodes.length
     }
-    result.scanned += g.episodes.length
   }
 
   // B2 修复：清理失效条目（数据一致性）——磁盘上已删除的剧集/番剧同步从库中移除
   // 仅当存在有效媒体库文件夹时才执行，避免空库扫描误清空数据
   let removed = 0
   // 1.5：扫描时是否清理失效条目由 cleanupOnScan 控制（默认开启）；关闭后扫描仅新增/更新，不做清理
-  if (folders && folders.length && settings && settings.cleanupOnScan !== false) {
+  if (!aborted() && folders && folders.length && settings && settings.cleanupOnScan !== false) {
     // B2：被忽略/回收站处理的未匹配文件不再视为有效，对应历史条目将被清理
     const existingFiles = new Set(files.filter((f) => !ignoredFiles.has(f)))
     // P0 修复：区分「文件夹已被移除」与「扫描范围收缩」——
@@ -421,6 +576,8 @@ async function doScan(store, folders, settings, onProgress) {
     }
     const snapshot = store.list().slice()
     for (const a of snapshot) {
+      // UX-03：清理阶段响应取消
+      if (aborted()) break
       // P5：原 filter + fs.existsSync 逐条同步校验磁盘存在性，大库时阻塞主进程；
       // 改为循环内异步 access（filter 回调不支持 await）
       const alive = []
@@ -444,13 +601,19 @@ async function doScan(store, folders, settings, onProgress) {
       if (alive.length === 0) {
         store.remove(a.id)
         removed++
+        removedIds.push(a.id)
       } else if (alive.length !== (a.episodes || []).length) {
-        store.updateAnime(a.id, { episodes: alive, aired: alive.length })
+        const updated = store.updateAnime(a.id, { episodes: alive, aired: alive.length })
+        if (updated) changedAnimes.push(updated)
       }
     }
   }
 
-  return { ...result, removed, animes: store.list() }
+  // O-01：扫描结束后防抖持久化增量缓存（供下次启动扫描复用）
+  scheduleScanCacheSave()
+
+  // PF-02：返回增量（changedAnimes / removedIds），不再回传全量库
+  return { ...result, removed, changedAnimes, removedIds, aborted: aborted() || undefined }
 }
 
 // 重建数据库：采用全量重扫实现「无损重建」，失败自动回滚
