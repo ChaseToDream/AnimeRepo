@@ -161,6 +161,55 @@
   margin-left: 4px;
 }
 
+/* ===== Skip OP/ED floating buttons ===== */
+.player-skip-btn {
+  position: absolute;
+  bottom: calc(88px + var(--spacer-16));
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  height: 32px;
+  padding: 0 var(--spacer-12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-full);
+  background: rgba(20, 21, 23, 0.82);
+  color: var(--text-default);
+  font-size: var(--body-sm-font-size);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease, color 0.15s ease;
+  animation: player-skip-in 0.2s ease-out;
+}
+.player-skip-btn svg {
+  flex-shrink: 0;
+}
+.player-skip-btn--op {
+  right: var(--spacer-16);
+  color: var(--bg-brand);
+  border-color: rgba(50, 240, 140, 0.45);
+}
+.player-skip-btn--ed {
+  left: var(--spacer-16);
+}
+.player-skip-btn:hover {
+  background: rgba(50, 240, 140, 0.9);
+  color: var(--text-onbrand);
+  border-color: transparent;
+}
+@keyframes player-skip-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ===== Bottom Controls ===== */
 .player-controls {
   position: absolute;

@@ -84,7 +84,7 @@ function Switch({ on, onChange, label, disabled }) {
 export default function Player() {
   const { animeId, epId } = useParams()
   const navigate = useNavigate()
-  const { library, getAnime, setProgress, setProgressSilent, updateSettings, updateAnime, setWatched, settings } = useApp()
+  const { library, getAnime, setProgress, setProgressSilent, updateSettings, updateAnime, setWatched, settings, showToast } = useApp()
 
   const anime = getAnime(animeId)
   const ep = anime?.episodes?.find((e) => e.id === epId)
@@ -131,6 +131,10 @@ export default function Player() {
   // —— 播放错误态 ——
   const [playError, setPlayError] = useState('')
 
+  // —— 片头/片尾跳过（1.1：skipOpEd 真正落地） ——
+  const [showSkipOp, setShowSkipOp] = useState(false)
+  const [showSkipEd, setShowSkipEd] = useState(false)
+
   // 同番剧剧集（按 number 排序）
   const episodes = (anime?.episodes || [])
     .slice()
@@ -140,6 +144,47 @@ export default function Player() {
   const nextEp = epIndex >= 0 && epIndex < episodes.length - 1 ? episodes[epIndex + 1] : null
 
   const videoSrc = ep?.filePath ? window.api?.toVideoUrl?.(ep.filePath) || '' : ''
+
+  // —— 片头/片尾时间点（1.1）——
+  // 手动标记（anime.opEnd / anime.edStart）优先；未标记时按时长启发式估算
+  // OP：常规 90s（短片 60s）且不超过时长 10%；ED：常规 90s（短片 45s）且不超过时长 5%
+  const skipEnabled = settings?.skipOpEd !== false
+  const skipOpEnd = useMemo(() => {
+    if (!skipEnabled || !duration) return 0
+    if (typeof anime?.opEnd === 'number' && anime.opEnd > 0) return anime.opEnd
+    const guess = duration <= 1200 ? 60 : 90
+    return Math.min(guess, Math.round(duration * 0.1))
+  }, [skipEnabled, duration, anime?.opEnd])
+  const skipEdStart = useMemo(() => {
+    if (!skipEnabled || !duration) return 0
+    if (typeof anime?.edStart === 'number' && anime.edStart > 0) return anime.edStart
+    const guess = duration <= 1200 ? 45 : 90
+    return Math.max(0, duration - Math.min(guess, Math.round(duration * 0.05)))
+  }, [skipEnabled, duration, anime?.edStart])
+
+  // 记录片头结束 / 片尾开始点（持久化到 anime.opEnd / anime.edStart，同番剧各集复用）
+  const recordSkipPoint = (field) => {
+    const v = videoRef.current
+    const t = Math.max(0, Math.round(v ? v.currentTime : currentTime))
+    updateAnime(animeId, { [field]: t })
+    showToast(`已记录${field === 'opEnd' ? '片头结束' : '片尾开始'}点 ${formatTime(t)}`, 'success')
+  }
+
+  // 跳转：片头 → opEnd；片尾 → 结尾前 2s（触发 ended 走自动下一集）
+  const skipToOpEnd = () => {
+    const v = videoRef.current
+    if (!v || !skipOpEnd) return
+    v.currentTime = Math.min(skipOpEnd, (v.duration || 0) - 1)
+    setCurrentTime(v.currentTime)
+    progressRef.current.time = v.currentTime
+    setShowSkipOp(false)
+  }
+  const skipToEdEnd = () => {
+    const v = videoRef.current
+    if (!v || !duration) return
+    v.currentTime = Math.max(0, (v.duration || 0) - 2)
+    setShowSkipEd(false)
+  }
 
   // 收藏（基于 anime.isFavorite 派生，随媒体库更新自动刷新）
   const fav = !!anime?.isFavorite
@@ -221,13 +266,21 @@ export default function Player() {
     setCurrentTime(v.currentTime)
     progressRef.current.time = v.currentTime
     progressRef.current.dur = v.duration
+    // 1.1：根据播放位置更新「跳过片头/片尾」浮层按钮（布尔值未变化时 React 自动跳过重渲染）
+    if (skipEnabled && v.duration) {
+      setShowSkipOp(v.currentTime > 0 && v.currentTime < skipOpEnd - 3)
+      setShowSkipEd(v.currentTime >= skipEdStart && v.currentTime < v.duration - 5)
+    } else {
+      setShowSkipOp(false)
+      setShowSkipEd(false)
+    }
     const now = Date.now()
     if (now - lastSaveRef.current >= PROGRESS_SAVE_INTERVAL) {
       lastSaveRef.current = now
       // P4-5：播放中静默保存，不触发全局重渲染；退出/切集时由 flushProgress 同步一次
       setProgressSilent(animeId, epId, v.currentTime, v.duration || 0)
     }
-  }, [animeId, epId, setProgressSilent])
+  }, [animeId, epId, setProgressSilent, skipEnabled, skipOpEnd, skipEdStart])
 
   // 切换剧集 / 卸载时保存一次
   useEffect(() => {
@@ -235,6 +288,8 @@ export default function Player() {
     progressRef.current = { time: 0, dur: 0 }
     setPlayError('')
     setSubtitleIndex(0)
+    setShowSkipOp(false)
+    setShowSkipEd(false)
     return () => {
       flushProgress()
     }
@@ -495,6 +550,20 @@ export default function Player() {
             </button>
           )}
 
+          {/* 1.1：跳过片头/片尾浮层按钮 */}
+          {showSkipOp && (
+            <button className="player-skip-btn player-skip-btn--op" onClick={skipToOpEnd}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+              跳过片头
+            </button>
+          )}
+          {showSkipEd && (
+            <button className="player-skip-btn player-skip-btn--ed" onClick={skipToEdEnd}>
+              跳过片尾
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            </button>
+          )}
+
           {/* ===== 底部控制栏 ===== */}
           <div className="player-controls">
             {/* 进度条 */}
@@ -746,6 +815,21 @@ export default function Player() {
                         <span className="setting-row__label">跳过片头片尾</span>
                         <Switch label="跳过片头片尾" on={skipOpEd} onChange={(v) => { setSkipOpEd(v); persist({ skipOpEd: v }) }} />
                       </div>
+                      <div className="setting-row">
+                        <span className="setting-row__label">记录片头结束点</span>
+                        <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={() => recordSkipPoint('opEnd')}>
+                          记录当前时间
+                        </button>
+                      </div>
+                      <div className="setting-row">
+                        <span className="setting-row__label">记录片尾开始点</span>
+                        <button className="ds-btn ds-btn--sm ds-btn--secondary" onClick={() => recordSkipPoint('edStart')}>
+                          记录当前时间
+                        </button>
+                      </div>
+                      <p className="setting-row__hint" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                        播放到片头/片尾交界处暂停，点击「记录当前时间」即可保存，同番剧各集自动复用；未记录时按时长自动估算。
+                      </p>
                     </div>
                   </>
                 )}
