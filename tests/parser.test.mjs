@@ -17,13 +17,25 @@ test('cleanTitlePart: 版式整词（剧场版/特别版等）正常移除', () 
 })
 
 test('cleanTitlePart: 分辨率/编码噪声移除', () => {
-  assert.equal(cleanTitlePart('[SubGroup] 标题 [1080p][x265]'), 'SubGroup 标题')
+  assert.equal(cleanTitlePart('标题 [1080p][x265]'), '标题')
+})
+
+// —— O-1：发布组方括号前缀剥离 ——
+test('cleanTitlePart: 标题前导发布组标记被剥离（O-1）', () => {
+  assert.equal(cleanTitlePart('[Nekomoe kissaten] Sora no Otoshimono'), 'Sora no Otoshimono')
+  assert.equal(cleanTitlePart('[BD] [DATABASE] Some Anime'), 'Some Anime')
+})
+
+test('cleanTitlePart: 标题中段/结尾方括号不受影响（O-1 回归）', () => {
+  const mid = parseFilename('My [Special] Title - 01.mkv', 'Folder')
+  assert.equal(mid.animeTitle, 'My Special Title')
+  assert.equal(mid.number, 1)
 })
 
 // —— parseFilename：常见命名模式 ——
 test('parseFilename: [字幕组] 标题 - 01', () => {
   const r = parseFilename('[Nekomoe kissaten] Sora no Otoshimono - 05 [1080p].mkv', 'Library')
-  assert.equal(r.animeTitle, 'Nekomoe kissaten Sora no Otoshimono')
+  assert.equal(r.animeTitle, 'Sora no Otoshimono')
   assert.equal(r.number, 5)
   assert.equal(r.season, 1)
 })

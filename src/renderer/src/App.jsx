@@ -154,7 +154,11 @@ function ShellLayout({ onFilterChange, activeFilter }) {
   )
 }
 
-function App() {
+// 应用主体路由：挂在 AppProvider 内部，可安全使用 useApp/useNavigate。
+// 修复：原实现把 useApp() 直接放在 App 组件顶层，而 AppProvider 只是它的子树，
+// App 自身渲染时 useContext(AppContext) 返回 null → 解构崩溃；且该错误发生在
+// ErrorBoundary 渲染之前无法被捕获，整棵 React 树卸载 → 只剩深色背景（黑屏）。
+function AppRoutes() {
   const navigate = useNavigate()
   const { api } = useApp()
 
@@ -188,19 +192,27 @@ function App() {
   }
 
   return (
+    <Routes>
+      <Route path="/" element={<ShellLayout activeFilter={filter.status} onFilterChange={handleFilterChange} />}>
+        <Route index element={<Library filter={filter} setFilter={setFilter} />} />
+        <Route path="stats" element={<Stats />} />
+        <Route path="history" element={<History />} />
+        <Route path="calendar" element={<Calendar />} />
+        <Route path="settings" element={<Settings />} />
+      </Route>
+      <Route path="/anime/:id" element={<Detail />} />
+      <Route path="/player/:animeId/:epId" element={<Player />} />
+    </Routes>
+  )
+}
+
+// Provider 层级：ErrorBoundary 捕获全局渲染异常，AppProvider 提供应用状态，
+// AppRoutes 在其内部，useApp() 才能拿到 context。
+function App() {
+  return (
     <ErrorBoundary>
       <AppProvider>
-        <Routes>
-        <Route path="/" element={<ShellLayout activeFilter={filter.status} onFilterChange={handleFilterChange} />}>
-          <Route index element={<Library filter={filter} setFilter={setFilter} />} />
-          <Route path="stats" element={<Stats />} />
-          <Route path="history" element={<History />} />
-          <Route path="calendar" element={<Calendar />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-        <Route path="/anime/:id" element={<Detail />} />
-        <Route path="/player/:animeId/:epId" element={<Player />} />
-        </Routes>
+        <AppRoutes />
       </AppProvider>
     </ErrorBoundary>
   )

@@ -283,11 +283,14 @@ async function fetchAniList(title) {
 
 // 在线获取：Bangumi（中文优先）→ AniList 兜底；失败返回 null。
 // 内存 + 磁盘双层缓存：同一标题会话内不重复请求；失败 24h 内不重试，成功永久缓存。
-async function fetchOnline(title) {
+// O-2：force=true 时跳过缓存强制重查（元数据手动刷新用），新结果覆盖旧缓存。
+async function fetchOnline(title, { force } = {}) {
   const cacheKey = (title || '').trim().toLowerCase()
   if (!cacheKey) return null
-  const cached = cacheGet(cacheKey)
-  if (cached) return cached.r
+  if (!force) {
+    const cached = cacheGet(cacheKey)
+    if (cached) return cached.r
+  }
   let result = null
   try {
     result = await fetchBangumi(title)

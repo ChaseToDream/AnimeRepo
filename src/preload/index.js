@@ -67,6 +67,8 @@ const api = {
   // —— N-06：封面 ——
   pickImage: () => ipcRenderer.invoke('dialog:pick-image'),
   setAnimeCover: (id, filePath) => ipcRenderer.invoke('anime:set-cover', id, filePath),
+  // —— O-2：在线元数据手动刷新 ——
+  refreshAnimeMetadata: (id) => ipcRenderer.invoke('anime:refresh-metadata', id),
   // —— 字幕 ——
   readSubtitle: (filePath) => ipcRenderer.invoke('subtitle:read', filePath),
   // —— 窗口控制 ——

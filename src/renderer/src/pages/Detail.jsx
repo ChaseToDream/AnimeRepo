@@ -47,6 +47,8 @@ export default function Detail() {
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false)
   const [splitEpIds, setSplitEpIds] = useState(() => new Set())
   const [splitTitle, setSplitTitle] = useState('')
+  // O-2：在线元数据手动刷新状态
+  const [refreshing, setRefreshing] = useState(false)
 
   // 切番剧时重置收藏与季选择
   useEffect(() => {
@@ -123,6 +125,23 @@ export default function Detail() {
     if (!filePath) return
     const updated = await setAnimeCover(anime.id, filePath)
     showToast(updated ? '封面已更新' : '封面更新失败', updated ? 'success' : 'error')
+  }
+  // O-2：在线元数据手动刷新（主进程强制重查 Bangumi/AniList，只覆盖展示字段，
+  // 保留标题/标签/评分与观看进度）
+  const refreshMeta = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      const updated = await api.refreshAnimeMetadata(anime.id)
+      showToast(
+        updated ? '元数据已更新' : '未匹配到在线资料（网络不可达或标题无法识别）',
+        updated ? 'success' : 'warning'
+      )
+    } catch (e) {
+      showToast('元数据刷新失败', 'error')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   // —— N3 合并 / 拆分 ——
@@ -247,6 +266,14 @@ export default function Detail() {
                 </button>
                 <button className="ds-btn ds-btn--lg ds-btn--secondary hero__action-manage" onClick={openManage}>
                   管理
+                </button>
+                <button
+                  className="ds-btn ds-btn--lg ds-btn--secondary"
+                  onClick={refreshMeta}
+                  disabled={refreshing}
+                  style={refreshing ? { opacity: 0.6, cursor: 'default' } : undefined}
+                >
+                  {refreshing ? '刷新中…' : '刷新元数据'}
                 </button>
               </div>
             </div>

@@ -6,10 +6,33 @@ import path from 'path'
 import * as store from './store'
 import { scanLibrary, rebuildDatabase, makeEpisodeId } from './scanner'
 import { titleKey } from './parser'
-import { saveLocalCover } from './coverCache'
-import { fetchAiringSchedule } from './metadata'
+import { saveLocalCover, cacheCover } from './coverCache'
+import { fetchAiringSchedule, fetchOnline } from './metadata'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
+
+// B-2 修复：字幕解码——国内 .srt/.ass 字幕大量使用 GBK/GB18030 编码，
+// 原实现硬编码 utf-8 导致中文乱码。解码策略（零依赖，利用 Electron
+// 内置 full-icu TextDecoder）：
+// 1) BOM 判定：UTF-16 LE/BE、UTF-8 BOM 直接按对应编码解码；
+// 2) 无 BOM：先尝试严格 UTF-8（fatal），成功即用（兼容纯 ASCII 与合法 UTF-8）；
+// 3) 严格 UTF-8 失败：回退 GB18030（GBK 超集，任意字节序列均可解码，不会抛错）。
+function decodeSubtitle(buf) {
+  if (!buf || !buf.length) return ''
+  if (buf.length >= 2) {
+    if (buf[0] === 0xff && buf[1] === 0xfe) return new TextDecoder('utf-16le').decode(buf.subarray(2))
+    if (buf[0] === 0xfe && buf[1] === 0xff) return new TextDecoder('utf-16be').decode(buf.subarray(2))
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return new TextDecoder('utf-8').decode(buf.subarray(3))
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
+  } catch (e) {
+    // 非纯 UTF-8：按简体中文环境最常见的 GB18030 解码
+    return new TextDecoder('gb18030').decode(buf)
+  }
+}
 
 // 扫描进度推送：向发起扫描的窗口发送 scan:progress 事件
 // P2 修复：节流合并高频进度——大库扫描每发现一个文件都会触发一次进度，
@@ -226,6 +249,11 @@ export function registerIpc() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     })
+    // B-3 修复：拆出的剧集保留 watched/progress，状态不应恒为 plan——
+    // 按拆出剧集的真实观看情况收敛（全部已看→completed / 部分→watching / 其余→plan），
+    // 与扫描合并 / updateAnime 的收口逻辑保持一致。
+    store.recalcStatus(newAnime)
+    store.save()
     if (kept.length) {
       const updated = store.updateAnime(from.id, { episodes: kept, aired: kept.length })
       return { upserts: [newAnime, ...(updated ? [updated] : [])], removedIds: [] }
@@ -422,12 +450,38 @@ export function registerIpc() {
     return store.updateAnime(id, { coverUrl: url })
   })
 
+  // —— O-2：在线元数据手动刷新 ——
+  // 强制跳过缓存重查（Bangumi → AniList），仅覆盖可安全合并的展示字段
+  // （译名/简介/类型/年份/播出时间/工作室/声优/封面），保留用户标题、标签、
+  // 评分与观看进度——避免 titleKey 突变导致下次扫描分组错乱。
+  // 刷新结果写回覆盖旧的磁盘元数据缓存。
+  ipcMain.handle('anime:refresh-metadata', async (_e, id) => {
+    const anime = store.get(id)
+    if (!anime) return null
+    const info = await fetchOnline(anime.title, { force: true })
+    if (!info || !info.title) return null
+    const patch = {
+      englishTitle: info.englishTitle || '',
+      romaji: info.romaji || '',
+      description: info.description || '',
+      genres: info.genres || [],
+      year: info.year || 0,
+      airDate: info.airDate || '',
+      studio: info.studio || '',
+      voiceActors: info.voiceActors || []
+    }
+    // 新封面下载到本地缓存（失败回退原网络 URL，与扫描路径一致）
+    if (info.coverUrl) patch.coverUrl = await cacheCover(info.coverUrl)
+    return store.updateAnime(id, patch)
+  })
+
   // —— 字幕 ——
   ipcMain.handle('subtitle:read', (_e, filePath) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) return null
       if (!SUBTITLE_EXTS.includes(path.extname(filePath).toLowerCase())) return null
-      return fs.readFileSync(filePath, 'utf-8')
+      // B-2：按字节读取后做编码探测（UTF-8/UTF-16/GBK），替代硬编码 utf-8
+      return decodeSubtitle(fs.readFileSync(filePath))
     } catch (e) {
       return null
     }

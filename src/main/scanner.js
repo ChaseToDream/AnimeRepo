@@ -429,7 +429,14 @@ async function doScan(store, folders, settings, onProgress, signal) {
     let anime = store.findByTitleKey(g.titleKey)
     if (anime && Array.isArray(anime.episodes)) {
       // 更新已有番剧：合并剧集（保留原有 watched/progress）
-      const existingMap = new Map(anime.episodes.map((e) => [e.number, e]))
+      // B-1 修复：复合键「季:集数」匹配旧条目——原实现仅按 number 匹配，
+      // 多季番剧各季从第 1 集重编号时（S1/S2 均为 1-12），后处理的季会命中
+      // 前一个季的旧条目，与其复用 id 并把 filePath 覆盖成自己的文件，
+      // 导致另一个季的剧集记录整体丢失（且每次扫描往返震荡）。按季兜底
+      // 历史数据（早期条目无 season 字段）回退为 season 1。
+      const existingMap = new Map(
+        anime.episodes.map((e) => [`${e.season ?? 1}:${e.number}`, e])
+      )
       // B-01：number=0 的未分类剧集无法按集数区分，改按文件路径匹配旧条目
       const existingByPath = new Map(
         anime.episodes.filter((e) => e.number === 0 && e.filePath).map((e) => [e.filePath, e])
@@ -439,7 +446,9 @@ async function doScan(store, folders, settings, onProgress, signal) {
       const episodes = []
       for (const ge of g.episodes) {
         const old =
-          ge.number > 0 ? existingMap.get(ge.number) : existingByPath.get(ge.file)
+          ge.number > 0
+            ? existingMap.get(`${g.season ?? 1}:${ge.number}`)
+            : existingByPath.get(ge.file)
         let id
         if (old && !usedIds.has(old.id)) {
           id = old.id

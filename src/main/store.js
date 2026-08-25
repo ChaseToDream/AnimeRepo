@@ -407,6 +407,7 @@ export {
   setEpisodeProgress,
   setEpisodeWatched,
   setEpisodesWatchedBulk,
+  recalcStatus,
   getWatchHistory,
   getSettings,
   updateSettings,
