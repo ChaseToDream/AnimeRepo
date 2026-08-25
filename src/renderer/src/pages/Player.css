@@ -774,3 +774,15 @@
   border-radius: var(--radius-4);
   vertical-align: 1px;
 }
+
+/* ===== UX-1 沉浸层：无操作自动隐藏标题栏/控制栏 ===== */
+.player-video-container .player-titlebar,
+.player-video-container .player-controls {
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+.player-video-container.player-ui-hidden .player-titlebar,
+.player-video-container.player-ui-hidden .player-controls {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}

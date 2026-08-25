@@ -94,6 +94,9 @@ export default function Library({ filter, setFilter }) {
   // P3：搜索词延迟更新，避免每次输入触发全库过滤重算
   const deferredQuery = useDeferredValue(filter.query || '')
   const q = deferredQuery.trim().toLowerCase()
+  // P-2：排序同样用低优先级渲染——切换排序或库变化时，排序结果异步重算，
+  // 避免在大型媒体库上同步阻塞主线程导致滚动卡顿。
+  const deferredSort = useDeferredValue(sort)
   const items = useMemo(() => {
     return library.filter((a) => {
       // U5：最近观看筛选（存在 lastWatchedAt 记录）
@@ -113,14 +116,14 @@ export default function Library({ filter, setFilter }) {
     })
   }, [library, filter.status, filter.genre, filter.tag, q])
 
-  // U5：排序（最近观看按时间倒序，其余按所选维度）
+  // U5：排序（最近观看按时间倒序，其余按所选维度；deferredSort 低优先级重算）
   const sortedItems = useMemo(() => {
     const arr = [...items]
     if (filter.status === 'recent') {
       arr.sort((a, b) => new Date(b.lastWatchedAt || 0) - new Date(a.lastWatchedAt || 0))
       return arr
     }
-    switch (sort) {
+    switch (deferredSort) {
       case 'title':
         arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh'))
         break
@@ -134,7 +137,7 @@ export default function Library({ filter, setFilter }) {
         arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     }
     return arr
-  }, [items, sort, filter.status])
+  }, [items, deferredSort, filter.status])
 
   // 全局统计（基于整个媒体库）
   const stats = {

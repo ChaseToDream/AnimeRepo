@@ -93,6 +93,8 @@ export default function Player() {
   const lastSaveRef = useRef(0)
   const progressRef = useRef({ time: 0, dur: 0 })
   const videoContainerRef = useRef(null)
+  // UX-1：沉浸层——无操作自动隐藏标题栏/控制栏的计时器
+  const uiTimerRef = useRef(null)
   // UX-07：单击/双击区分计时器（双击全屏时取消误触发的单击暂停）
   const clickTimerRef = useRef(null)
   // UX-07：全屏函数引用（供双击处理器在 fullscreen 声明前引用）
@@ -136,6 +138,20 @@ export default function Player() {
 
   // —— 播放错误态 ——
   const [playError, setPlayError] = useState('')
+  // UX-1：控制层是否可见（移动鼠标/暂停时显示，播放中无操作 2.5s 自动隐藏）
+  const [uiVisible, setUiVisible] = useState(true)
+  const showUi = useCallback(() => {
+    setUiVisible(true)
+    if (uiTimerRef.current) clearTimeout(uiTimerRef.current)
+    uiTimerRef.current = setTimeout(() => {
+      const v = videoRef.current
+      // 暂停时保持显示；仅播放中的无操作才隐藏
+      setUiVisible((prev) => (prev && v && !v.paused ? false : prev))
+    }, 2500)
+  }, [])
+  const handleMouseMove = useCallback(() => showUi(), [showUi])
+  // 卸载时清理沉浸层计时器
+  useEffect(() => () => { if (uiTimerRef.current) clearTimeout(uiTimerRef.current) }, [])
 
   // —— O-03：进度条缩略图预览 ——
   // 用独立的隐藏 video 元素后台 seek 抓帧（不影响正在播放的主 video），
@@ -595,7 +611,8 @@ export default function Player() {
         {/* ===== 视频区 ===== */}
         <div
           ref={videoContainerRef}
-          className="player-video-container"
+          className={'player-video-container' + (uiVisible ? '' : ' player-ui-hidden')}
+          onMouseMove={handleMouseMove}
           onClick={(e) => {
             // 点击空白处播放/暂停（避免点击控制元素误触发）
             if (e.target === e.currentTarget) handleVideoClick()
@@ -628,7 +645,7 @@ export default function Player() {
             onLoadedMetadata={handleLoadedMetadata}
             onTimeUpdate={handleTimeUpdate}
             onPlay={() => { setPlaying(true); setSpeedMenuOpen(false) }}
-            onPause={() => setPlaying(false)}
+            onPause={() => { setPlaying(false); showUi() }}
             onEnded={handleEnded}
             onError={handleVideoError}
           >

@@ -191,8 +191,14 @@ export function AppProvider({ children }) {
           if (res.aborted) {
             showToast('扫描已取消（已完成的变更已保留）', 'info')
           } else {
+            // O-3：变更明细——把新增/更新的番剧标题带进提示（前 5 部），
+            // 让用户一眼看到本次扫描实际改动了哪些条目。
+            const changed = res.changedAnimes || []
+            const detail = changed.length
+              ? '：' + changed.slice(0, 5).map((a) => a.title).join('、') + (changed.length > 5 ? '…' : '')
+              : ''
             showToast(
-              `扫描完成：新增 ${res.added || 0} 部，更新 ${res.updated || 0} 部${res.removed ? `，移除 ${res.removed} 部` : ''}`,
+              `扫描完成：新增 ${res.added || 0} 部，更新 ${res.updated || 0} 部${res.removed ? `，移除 ${res.removed} 部` : ''}${detail}`,
               'success'
             )
           }

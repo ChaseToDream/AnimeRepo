@@ -43,6 +43,8 @@ export default function Detail() {
   // N3：管理弹窗（合并 / 拆分）
   const [manageOpen, setManageOpen] = useState(false)
   const [mergeTarget, setMergeTarget] = useState('')
+  // O-4：合并目标搜索词（库较大时下拉难用，改输入搜索 + 候选列表点选）
+  const [mergeQuery, setMergeQuery] = useState('')
   // B-03：合并确认对话框（替换原生 confirm）
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false)
   const [splitEpIds, setSplitEpIds] = useState(() => new Set())
@@ -147,6 +149,7 @@ export default function Detail() {
   // —— N3 合并 / 拆分 ——
   const openManage = () => {
     setMergeTarget('')
+    setMergeQuery('')
     setSplitEpIds(new Set())
     setSplitTitle('')
     setManageOpen(true)
@@ -173,16 +176,26 @@ export default function Detail() {
   }
   const handleSplit = async () => {
     if (!splitEpIds.size) return
-    await splitAnime(anime.id, [...splitEpIds], splitTitle)
+    const delta = await splitAnime(anime.id, [...splitEpIds], splitTitle)
     setManageOpen(false)
     showToast(`已拆出 ${splitEpIds.size} 集为新番剧`, 'success')
-    navigate('/')
+    // O-4：定位到新拆出的番剧详情页（upserts 中当前库原本不存在的条目）
+    const existing = new Set(library.map((x) => x.id))
+    const created = delta?.upserts?.find((a) => !existing.has(a.id))
+    navigate(created ? `/anime/${created.id}` : '/')
   }
 
   // 相关推荐：同流派的其他番剧
   const related = library
     .filter((a) => a.id !== anime.id && (a.genres || []).some((g) => (anime.genres || []).includes(g)))
     .slice(0, 8)
+
+  // O-4：合并目标候选——按标题搜索过滤（排除自身），取前 8 供点选；已选目标高亮显示
+  const mq = mergeQuery.trim().toLowerCase()
+  const mergeCandidates = library
+    .filter((x) => x.id !== anime.id && (!mq || (x.title || '').toLowerCase().includes(mq)))
+    .slice(0, 8)
+  const selectedMerge = library.find((x) => x.id === mergeTarget) || null
 
   const poster = (
     <Poster
@@ -617,25 +630,41 @@ export default function Detail() {
                 <div className="edit-field">
                   <label className="edit-field__label">合并到其他番剧</label>
                   <div className="manage-row">
-                    <select
-                      className="ds-select"
-                      value={mergeTarget}
-                      onChange={(e) => setMergeTarget(e.target.value)}
-                      aria-label="选择目标番剧"
-                    >
-                      <option value="">选择目标番剧…</option>
-                      {library
-                        .filter((x) => x.id !== anime.id)
-                        .map((x) => (
-                          <option key={x.id} value={x.id}>
-                            {x.title}（{x.episodes?.length || 0} 集）
-                          </option>
-                        ))}
-                    </select>
+                    <input
+                      className="ds-input"
+                      type="text"
+                      value={mergeQuery}
+                      placeholder="搜索目标番剧…"
+                      onChange={(e) => setMergeQuery(e.target.value)}
+                      aria-label="搜索目标番剧"
+                    />
                     <button className="ds-btn ds-btn--brand ds-btn--sm" disabled={!mergeTarget} onClick={handleMerge}>
                       合并
                     </button>
                   </div>
+                  {selectedMerge ? (
+                    <div className="edit-field__hint" style={{ color: 'var(--accent-color, #32F08C)' }}>
+                      已选择：{selectedMerge.title}（{selectedMerge.episodes?.length || 0} 集）
+                    </div>
+                  ) : (
+                    <div className="manage-candidates" style={{ maxHeight: 180, overflowY: 'auto', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {mergeCandidates.length === 0 ? (
+                        <span className="text-tertiary">无匹配目标</span>
+                      ) : (
+                        mergeCandidates.map((x) => (
+                          <button
+                            key={x.id}
+                            type="button"
+                            className="ds-btn ds-btn--sm ds-btn--secondary"
+                            style={{ justifyContent: 'flex-start', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            onClick={() => { setMergeTarget(x.id); setMergeQuery('') }}
+                          >
+                            {x.title}（{x.episodes?.length || 0} 集）
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                   <p className="edit-field__hint">合并后当前条目将被删除，观看进度会保留并转移。</p>
                 </div>
 
