@@ -9,7 +9,9 @@ import { cacheCover } from './coverCache'
 
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|m2ts|rmvb|rm)$/i
 const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub)$/i
-const METADATA_CONCURRENCY = 3
+// P-3：在线元数据并发数 3→6——网络通畅时显著缩短首扫耗时；
+// 连续性失败仍由下方 METADATA_FAIL_LIMIT 熔断保护（网络不可达时不会 6 倍放大请求）。
+const METADATA_CONCURRENCY = 6
 // P5：在线元数据连续失败熔断阈值——网络不可达（如 AniList 被墙）时
 // 每部新番都要等满 10s 超时，大库首扫会被拖长至几十分钟；
 // 连续失败达到阈值后跳过本轮剩余请求（新番仍以离线默认资料入库，下次扫描自动重试）

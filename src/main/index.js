@@ -2,10 +2,10 @@ import { app, shell, BrowserWindow, protocol, net } from 'electron'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { ensureDataFile, getSettings, flushSaveSync } from './store'
+import { ensureDataFile, getSettings, list, flushSaveSync } from './store'
 import { registerIpc } from './ipc'
 import { VIDEO_EXT } from './scanner'
-import { getCoverDir } from './coverCache'
+import { getCoverDir, cleanupUnusedCovers } from './coverCache'
 import { startAutoSync, stopAutoSync } from './autosync'
 
 // 自定义协议：anime://local/<base64path> 用于安全加载本地视频
@@ -39,6 +39,17 @@ function isAllowedMedia(filePath) {
     return VIDEO_EXT.test(filePath)
   } catch (e) {
     return false
+  }
+}
+
+// B-5：解析 anime://cover/<base64> URL → 对应封面缓存文件名（hash.ext）。
+// 供启动时封面清理收集「仍在引用」的封面集合；非法/非封面 URL 返回 null。
+function coverCacheName(url) {
+  try {
+    if (typeof url !== 'string' || !url.startsWith('anime://cover/')) return null
+    return Buffer.from(url.slice('anime://cover/'.length), 'base64url').toString('utf-8')
+  } catch (e) {
+    return null
   }
 }
 
@@ -110,6 +121,15 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.animerepo')
   ensureDataFile()
   registerIpc()
+
+  // B-5：清理未被引用的历史封面缓存（异步执行，不阻塞启动）。
+  // 从库内所有番剧的 coverUrl 解码出仍在引用的缓存文件名，其余删除。
+  const coverRefs = []
+  for (const a of list()) {
+    const name = coverCacheName(a && a.coverUrl)
+    if (name) coverRefs.push(name)
+  }
+  cleanupUnusedCovers(coverRefs)
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

@@ -91,3 +91,25 @@ export async function saveLocalCover(srcPath) {
     return ''
   }
 }
+
+// B-5 修复：清理未被引用的本地封面——covers 目录随换源/改封面无限增长，
+// 磁盘上会残留大量不再被任何番剧引用的历史 hash 文件。
+// 调用方传入当前媒体库仍「引用的缓存文件名」集合（由 anime://cover/<base64> 解码得到），
+// 删除不在此集合内的封面文件。删除失败静默忽略，不阻塞启动。
+export async function cleanupUnusedCovers(referencedFileNames) {
+  try {
+    const dir = getCoverDir()
+    let entries
+    try {
+      entries = await fs.promises.readdir(dir)
+    } catch (e) {
+      return // 目录不存在/不可读：无需清理
+    }
+    if (!entries.length) return
+    const keep = new Set(Array.isArray(referencedFileNames) ? referencedFileNames : [])
+    const candidates = entries.filter((n) => COVER_EXTS.test(n) && !keep.has(n))
+    await Promise.all(candidates.map((n) => fs.promises.unlink(join(dir, n)).catch(() => {})))
+  } catch (e) {
+    /* 清理失败不影响启动 */
+  }
+}

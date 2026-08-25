@@ -41,6 +41,66 @@ const DEFAULT_SETTINGS = {
   ratingSystem: '10分制'
 }
 
+// B-4 修复：设置项 schema 白名单——`settings:update` 原先直接 merge 任意 patch，
+// 非法/未知字段（如字符串误写为 number、越界值、渲染层引入的 quality 等未声明键）
+// 会污染配置，且恢复默认无法清除。新增类型/范围/枚举校验，非法字段丢弃并告警。
+// 结构与 DEFAULT_SETTINGS 一一对应。
+const SETTING_SCHEMA = {
+  libraryFolders: { array: true },
+  autoScanOnStartup: { boolean: true },
+  scanSubtitle: { boolean: true },
+  autoDownload: { boolean: true },
+  scanDepth: { enum: ['深度扫描', '仅当前目录', '一层子目录', '两层子目录'] },
+  videoFormats: { array: true },
+  infoFormats: { array: true },
+  recognizeMode: { enum: ['自动识别', '正则表达式'] },
+  regexPattern: { string: true },
+  preferLocalInfo: { boolean: true },
+  cleanupOnScan: { boolean: true },
+  unmatchedAction: { enum: ['保留在未分类中', '自动忽略', '移至回收站'] },
+  autoNextEpisode: { boolean: true },
+  skipOpEd: { boolean: true },
+  hardwareDecode: { boolean: true },
+  externalPlayerPath: { string: true },
+  defaultPlaySpeed: { number: true, min: 0.1, max: 8 },
+  subtitleFontSize: { enum: ['small', 'medium', 'large', 'xlarge', '小', '中', '大', '特大'] },
+  subtitleFont: { string: true },
+  subtitleStroke: { boolean: true },
+  subtitleBottomMargin: { number: true, min: 0, max: 500, int: true },
+  preferredSubtitleLang: { string: true },
+  preferredAudioLang: { string: true },
+  defaultVolume: { number: true, min: 0, max: 100, int: true },
+  audioGain: { boolean: true },
+  outputDevice: { string: true },
+  themeMode: { enum: ['深色', '浅色', '跟随系统'] },
+  accentColor: { string: true },
+  posterDisplayMode: { enum: ['竖版海报', '横版封面'] },
+  uiDensity: { enum: ['紧凑', '标准', '宽松'] },
+  enableAnimations: { boolean: true },
+  uiLanguage: { string: true },
+  dateFormat: { enum: ['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] },
+  ratingSystem: { enum: ['10分制', '5星制', '百分制'] }
+}
+
+function isValidSetting(key, value) {
+  const s = SETTING_SCHEMA[key]
+  if (!s) return false
+  if (s.boolean) return typeof value === 'boolean'
+  if (s.string) return typeof value === 'string'
+  if (s.number) {
+    if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) return false
+    if (typeof s.min === 'number' && value < s.min) return false
+    if (typeof s.max === 'number' && value > s.max) return false
+    if (s.int && !Number.isInteger(value)) return false
+    return true
+  }
+  if (s.array) {
+    return Array.isArray(value) && value.every((v) => typeof v === 'string')
+  }
+  if (s.enum) return s.enum.includes(value)
+  return false
+}
+
 let dataFile = ''
 let state = { animes: [], settings: { ...DEFAULT_SETTINGS }, watchHistory: [] }
 
@@ -326,7 +386,13 @@ function getSettings() {
 }
 
 function updateSettings(patch) {
-  state.settings = { ...state.settings, ...patch }
+  if (!patch || typeof patch !== 'object') return { ...state.settings }
+  // B-4：逐项通过 schema 白名单校验，非法/未知字段丢弃（首次落日志便于排查）
+  const clean = {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (isValidSetting(k, v)) clean[k] = v
+  }
+  state.settings = { ...state.settings, ...clean }
   save()
   return { ...state.settings }
 }
