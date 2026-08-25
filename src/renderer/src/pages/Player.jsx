@@ -92,6 +92,11 @@ export default function Player() {
   const videoRef = useRef(null)
   const lastSaveRef = useRef(0)
   const progressRef = useRef({ time: 0, dur: 0 })
+  const videoContainerRef = useRef(null)
+  // UX-07：单击/双击区分计时器（双击全屏时取消误触发的单击暂停）
+  const clickTimerRef = useRef(null)
+  // UX-07：全屏函数引用（供双击处理器在 fullscreen 声明前引用）
+  const fullscreenRef = useRef(null)
 
   // —— 播放状态 ——
   const [playing, setPlaying] = useState(false)
@@ -131,6 +136,64 @@ export default function Player() {
 
   // —— 播放错误态 ——
   const [playError, setPlayError] = useState('')
+
+  // —— O-03：进度条缩略图预览 ——
+  // 用独立的隐藏 video 元素后台 seek 抓帧（不影响正在播放的主 video），
+  // 生成 10 帧 dataURL；hover 进度条时按百分比显示对应帧
+  const [thumbs, setThumbs] = useState([])
+  const [thumbPreview, setThumbPreview] = useState(null) // { pct } 或 null
+  useEffect(() => {
+    if (!videoSrc) {
+      setThumbs([])
+      return undefined
+    }
+    let cancelled = false
+    setThumbs([])
+    const v = document.createElement('video')
+    v.muted = true
+    v.preload = 'auto'
+    v.src = videoSrc
+    const canvas = document.createElement('canvas')
+    canvas.width = 160
+    canvas.height = 90
+    const ctx = canvas.getContext('2d')
+    const N = 10
+    const run = async () => {
+      // 等待元数据就绪（失败/超时则放弃，预览为可选增强）
+      const ready = await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(false), 8000)
+        v.onloadeddata = () => { clearTimeout(timer); resolve(true) }
+        v.onerror = () => { clearTimeout(timer); resolve(false) }
+      })
+      if (!ready || cancelled || !v.duration || !isFinite(v.duration)) return
+      const urls = []
+      for (let i = 0; i < N; i++) {
+        if (cancelled) break
+        const t = ((i + 0.5) / N) * v.duration
+        try {
+          await new Promise((resolve) => {
+            const onSeek = () => { v.removeEventListener('seeked', onSeek); resolve() }
+            v.addEventListener('seeked', onSeek)
+            v.currentTime = t
+          })
+          ctx.drawImage(v, 0, 0, canvas.width, canvas.height)
+          // anime:// 协议注册为 secure，canvas 不应被污染；若被污染此处抛错并放弃
+          urls.push(canvas.toDataURL('image/jpeg', 0.6))
+        } catch (e) {
+          break
+        }
+      }
+      if (!cancelled && urls.length) setThumbs(urls)
+    }
+    run()
+    return () => {
+      cancelled = true
+      v.onloadeddata = null
+      v.onerror = null
+      v.removeAttribute('src')
+      v.load()
+    }
+  }, [videoSrc])
 
   // —— 片头/片尾跳过（1.1：skipOpEd 真正落地） ——
   const [showSkipOp, setShowSkipOp] = useState(false)
@@ -200,6 +263,45 @@ export default function Player() {
     if (!v) return
     if (v.paused) v.play().catch(() => {})
     else v.pause()
+  }, [])
+
+  // UX-07：视频区单击延迟判定（220ms 内二次点击视为双击全屏，不触发播放/暂停）
+  const handleVideoClick = useCallback(() => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    } else {
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null
+        togglePlay()
+      }, 220)
+    }
+  }, [togglePlay])
+
+  const handleVideoDblClick = useCallback(() => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    fullscreenRef.current?.()
+  }, [])
+
+  // UX-07：Ctrl+滚轮调节音量——需原生监听（passive: false 才能 preventDefault
+  // 阻止 Electron 页面缩放），React onWheel 是被动监听无法拦截
+  useEffect(() => {
+    const el = videoContainerRef.current
+    if (!el) return undefined
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      setVolume((prev) => {
+        const next = Math.min(100, Math.max(0, prev + (e.deltaY < 0 ? 5 : -5)))
+        if (videoRef.current) videoRef.current.volume = next / 100
+        return next
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
   const seekTo = useCallback(
@@ -314,6 +416,8 @@ export default function Player() {
       /* ignore */
     }
   }
+  // UX-07：暴露给双击处理器
+  fullscreenRef.current = fullscreen
   const pip = () => {
     const v = videoRef.current
     if (!v) return
@@ -489,10 +593,14 @@ export default function Player() {
     <div className="player-page">
       <div className="player-main">
         {/* ===== 视频区 ===== */}
-        <div className="player-video-container" onClick={(e) => {
-          // 点击空白处播放/暂停（避免点击控制元素误触发）
-          if (e.target === e.currentTarget) togglePlay()
-        }}>
+        <div
+          ref={videoContainerRef}
+          className="player-video-container"
+          onClick={(e) => {
+            // 点击空白处播放/暂停（避免点击控制元素误触发）
+            if (e.target === e.currentTarget) handleVideoClick()
+          }}
+        >
           {/* 浮动标题栏 */}
           <header className="player-titlebar">
             <div className="player-titlebar__left">
@@ -514,7 +622,8 @@ export default function Player() {
             ref={videoRef}
             className="player-video"
             src={videoSrc}
-            onClick={togglePlay}
+            onClick={handleVideoClick}
+            onDoubleClick={handleVideoDblClick}
             style={{ filter }}
             onLoadedMetadata={handleLoadedMetadata}
             onTimeUpdate={handleTimeUpdate}
@@ -567,8 +676,32 @@ export default function Player() {
 
           {/* ===== 底部控制栏 ===== */}
           <div className="player-controls">
-            {/* 进度条 */}
-            <div className="player-progress">
+            {/* 进度条（O-03：hover 显示缩略图预览） */}
+            <div
+              className="player-progress"
+              onMouseMove={(e) => {
+                // 必须在事件分发期间同步读取 rect（同 P6 白屏修复的教训）
+                const rect = e.currentTarget.getBoundingClientRect()
+                const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+                setThumbPreview({ pct })
+              }}
+              onMouseLeave={() => setThumbPreview(null)}
+            >
+              {/* O-03：缩略图预览浮层（抓帧完成前不显示） */}
+              {thumbs.length > 0 && thumbPreview && (
+                <div
+                  className="player-thumb-preview"
+                  style={{ left: `calc(${(thumbPreview.pct * 100).toFixed(1)}% - 80px)` }}
+                >
+                  <img
+                    src={thumbs[Math.min(thumbs.length - 1, Math.floor(thumbPreview.pct * thumbs.length))]}
+                    alt=""
+                  />
+                  <span className="player-thumb-preview__time">
+                    {formatTime(thumbPreview.pct * (duration || 0))}
+                  </span>
+                </div>
+              )}
               <input
                 type="range"
                 className="player-progress__range"

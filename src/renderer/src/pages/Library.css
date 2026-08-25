@@ -47,6 +47,56 @@
   overflow-y: auto;
   min-height: 0;
 }
+
+/* ===== UX-06：首屏加载骨架 ===== */
+.library-skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--spacer-16);
+  padding: var(--spacer-16) var(--spacer-24);
+}
+
+.library-skeleton__poster {
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-4);
+  background: linear-gradient(
+    100deg,
+    var(--bg-overlay-l1) 40%,
+    var(--bg-overlay-l3) 50%,
+    var(--bg-overlay-l1) 60%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.library-skeleton__line {
+  height: 12px;
+  margin-top: var(--spacer-8);
+  border-radius: var(--radius-2);
+  background: linear-gradient(
+    100deg,
+    var(--bg-overlay-l1) 40%,
+    var(--bg-overlay-l3) 50%,
+    var(--bg-overlay-l1) 60%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.library-skeleton__line--short {
+  width: 60%;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -80% 0; }
+}
+
+/* 动画关闭时静态呈现占位（不闪烁） */
+:root[data-animations='off'] .library-skeleton__poster,
+:root[data-animations='off'] .library-skeleton__line {
+  animation: none;
+}
 .anime-list {
   background: var(--bg-base-secondary);
   border: 1px solid var(--border-neutral-l1);

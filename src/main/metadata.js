@@ -310,4 +310,62 @@ function stripHtml(html) {
   return (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
 }
 
+// ===== N-01：追番日历（AniList AiringSchedule）=====
+// 按标题查询单部番剧的下一集放送时间；独立内存缓存 + 10 分钟 TTL
+// （放送时间基本固定，短 TTL 仅为跨天滚动「下一集」）
+const airingCache = new Map()
+const AIRING_TTL = 10 * 60 * 1000
+
+export async function fetchAiringSchedule(title) {
+  const key = (title || '').trim().toLowerCase()
+  if (!key) return null
+  const cached = airingCache.get(key)
+  if (cached && Date.now() - cached.at < AIRING_TTL) return cached.r
+  const query = `
+  query ($search: String) {
+    Media(search: $search, type: ANIME) {
+      id
+      title { native romaji english }
+      coverImage { large }
+      status
+      nextAiringEpisode { episode airingAt }
+    }
+  }`
+  let result = null
+  try {
+    const res = await fetchWithTimeout(ANILIST_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ query, variables: { search: title } })
+    })
+    if (res.ok) {
+      const json = await res.json()
+      const m = json && json.data && json.data.Media
+      if (m) {
+        // 相似度匹配：搜索返回第一条可能不是目标番（同 O-02 的防误配策略）
+        const target = normalizeTitle(title)
+        const names = [m.title && m.title.native, m.title && m.title.romaji, m.title && m.title.english]
+        const matched = names.some((n) => {
+          if (!n) return false
+          const nn = normalizeTitle(n)
+          return nn === target || nn.includes(target) || target.includes(nn)
+        })
+        if (matched) {
+          result = {
+            anilistId: m.id,
+            coverUrl: (m.coverImage && m.coverImage.large) || '',
+            status: m.status || '',
+            nextEpisode: m.nextAiringEpisode ? m.nextAiringEpisode.episode : null,
+            airingAt: m.nextAiringEpisode ? m.nextAiringEpisode.airingAt * 1000 : null // s → ms
+          }
+        }
+      }
+    }
+  } catch (e) {
+    result = null
+  }
+  airingCache.set(key, { r: result, at: Date.now() })
+  return result
+}
+
 export { offlineDefaults, fetchOnline, coverGradient }

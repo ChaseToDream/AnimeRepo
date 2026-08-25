@@ -1,5 +1,5 @@
-import { Component, useState } from 'react'
-import { Routes, Route, Outlet, NavLink, useLocation } from 'react-router-dom'
+import { Component, useState, useEffect } from 'react'
+import { Routes, Route, Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { AppProvider, useApp, useScanProgress } from './store/AppContext'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
@@ -7,6 +7,8 @@ import Library, { loadUiPrefs } from './pages/Library'
 import Detail from './pages/Detail'
 import Player from './pages/Player'
 import Stats from './pages/Stats'
+import History from './pages/History'
+import Calendar from './pages/Calendar'
 import Settings from './pages/Settings'
 
 // P6：全局 Error Boundary——渲染期未捕获异常原先会卸载整棵 React 树，
@@ -68,7 +70,7 @@ function ScanStatusText() {
   return t('status.found', { n: scanProgress.found })
 }
 
-// 带侧边栏的外壳布局（番剧库 / 统计 / 设置）
+// 带侧边栏的外壳布局（番剧库 / 统计 / 历史 / 日历 / 设置）
 function ShellLayout({ onFilterChange, activeFilter }) {
   const { library, settings, scanning, t, api } = useApp()
   const location = useLocation()
@@ -153,6 +155,18 @@ function ShellLayout({ onFilterChange, activeFilter }) {
 }
 
 function App() {
+  const navigate = useNavigate()
+  const { api } = useApp()
+
+  // UX-08：订阅系统通知点击导航事件（新番通知直达详情页）。
+  // 挂在 App 根组件而非 ShellLayout——用户停留在播放页（无外壳）时同样生效
+  useEffect(() => {
+    if (!api?.onNavigate) return undefined
+    return api.onNavigate((path) => {
+      if (path) navigate(path)
+    })
+  }, [api, navigate])
+
   // UX-04：状态筛选从上次会话恢复（仅初始化一次，避免覆盖运行中的筛选切换）
   const [filter, setFilter] = useState(() => {
     const prefs = loadUiPrefs()
@@ -180,6 +194,8 @@ function App() {
         <Route path="/" element={<ShellLayout activeFilter={filter.status} onFilterChange={handleFilterChange} />}>
           <Route index element={<Library filter={filter} setFilter={setFilter} />} />
           <Route path="stats" element={<Stats />} />
+          <Route path="history" element={<History />} />
+          <Route path="calendar" element={<Calendar />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="/anime/:id" element={<Detail />} />

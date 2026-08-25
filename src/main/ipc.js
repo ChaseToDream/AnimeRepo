@@ -7,6 +7,7 @@ import * as store from './store'
 import { scanLibrary, rebuildDatabase, makeEpisodeId } from './scanner'
 import { titleKey } from './parser'
 import { saveLocalCover } from './coverCache'
+import { fetchAiringSchedule } from './metadata'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
 
@@ -268,7 +269,7 @@ export function registerIpc() {
   ipcMain.handle('data:export', async () => {
     const res = await dialog.showSaveDialog({ defaultPath: 'animerepo-backup.json' })
     if (res.canceled || !res.filePath) return false
-    fs.writeFileSync(res.filePath, JSON.stringify({ animes: store.list(), settings: store.getSettings() }, null, 2), 'utf-8')
+    fs.writeFileSync(res.filePath, JSON.stringify({ animes: store.list(), settings: store.getSettings(), watchHistory: store.getWatchHistory().slice().reverse() }, null, 2), 'utf-8')
     return true
   })
   ipcMain.handle('data:import', async () => {
@@ -296,6 +297,67 @@ export function registerIpc() {
     if (p && fs.existsSync(p)) shell.openPath(p)
   })
   ipcMain.handle('app:version', () => app.getVersion())
+
+  // —— O-04：观看历史 ——
+  ipcMain.handle('history:get', () => store.getWatchHistory())
+
+  // —— N-01：追番日历 ——
+  // 取库内「正在观看」番剧的下一集放送时间（AniList，10min 缓存）。
+  // 全部查询失败（网络不可达）时 ok=false，渲染端提示降级。
+  ipcMain.handle('calendar:fetch', async () => {
+    const watching = store.list().filter((a) => a.status === 'watching').slice(0, 50)
+    if (!watching.length) return { ok: true, items: [] }
+    const items = []
+    let failed = 0
+    let idx = 0
+    const workers = Array.from({ length: Math.min(3, watching.length) }, async () => {
+      while (idx < watching.length) {
+        const a = watching[idx++]
+        const s = await fetchAiringSchedule(a.title)
+        if (s) {
+          items.push({
+            animeId: a.id,
+            title: a.title,
+            localCover: a.coverUrl || '',
+            nextEpisode: s.nextEpisode,
+            airingAt: s.airingAt,
+            finished: s.status === 'FINISHED'
+          })
+        } else {
+          failed++
+        }
+      }
+    })
+    await Promise.all(workers)
+    // airingAt 升序（无放送信息的排末尾）
+    items.sort((x, y) => (x.airingAt || Infinity) - (y.airingAt || Infinity))
+    return { ok: failed < watching.length, items }
+  })
+
+  // —— N-05：更新检查 ——
+  // 轻量方案：比对 GitHub Releases latest 与当前版本，无需 electron-updater。
+  // 发布地址未配置时返回 unconfigured（开源项目发布前占位）。
+  const GITHUB_REPO = '' // TODO: 发布时填入 'owner/anime-repo'
+  ipcMain.handle('app:check-update', async () => {
+    if (!GITHUB_REPO) return { ok: false, reason: 'unconfigured' }
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 10000)
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'AnimeRepo' },
+        signal: controller.signal
+      })
+      clearTimeout(timer)
+      if (!res.ok) return { ok: false, reason: 'network' }
+      const json = await res.json()
+      const latest = String(json.tag_name || '').replace(/^v/, '')
+      const current = app.getVersion()
+      const hasUpdate = Boolean(latest) && latest !== current
+      return { ok: true, hasUpdate, latest, current, url: json.html_url || '' }
+    } catch (e) {
+      return { ok: false, reason: 'network' }
+    }
+  })
 
   // —— N-02：外部播放器 ——
   // 用系统安装的 mpv / VLC 等播放器打开视频（内置 <video> 不支持 HEVC/Hi10P 等编码，

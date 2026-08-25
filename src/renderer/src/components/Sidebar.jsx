@@ -1,15 +1,36 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import { STATUS_LABEL, STATUS_TAG_CLASS } from '../lib/format'
 import api from '../lib/api'
 
-// 侧边导航：用于番剧库/统计/设置等带完整外壳的页面
+// 侧边导航：用于番剧库/统计/历史/日历/设置等带完整外壳的页面
 export default function Sidebar({ activeFilter, onFilterChange }) {
   const { library, settings, addFolder, refresh, t, showToast, scan } = useApp()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [section, setSection] = useState('library')
+  const searchInputRef = useRef(null)
+
+  // UX-05：Ctrl+F / Cmd+F 全局聚焦搜索框
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key === 'f')) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // UX-05：一键清空搜索
+  const clearQuery = () => {
+    setQuery('')
+    onFilterChange?.(activeFilter, '')
+    searchInputRef.current?.focus()
+  }
 
   const countBy = (status) => library.filter((a) => a.status === status).length
   const total = library.length
@@ -43,12 +64,13 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
     <aside className="ds-sidebar">
       <nav className="ds-navlist">
         <div className="ds-navlist__search">
-          <div className="ds-input">
+          <div className="ds-input ds-navlist__search-box">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ds-input__icon">
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.5" y2="16.5" />
             </svg>
             <input
+              ref={searchInputRef}
               type="text"
               placeholder={t('nav.search')}
               value={query}
@@ -57,6 +79,12 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
                 onFilterChange?.(activeFilter, e.target.value)
               }}
             />
+            {/* UX-05：有输入时显示一键清空按钮 */}
+            {query && (
+              <button className="ds-navlist__search-clear" aria-label="清空搜索" onClick={clearQuery}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            )}
           </div>
         </div>
 
@@ -102,6 +130,32 @@ export default function Sidebar({ activeFilter, onFilterChange }) {
               <line x1="4" y1="20" x2="20" y2="20" /><line x1="6" y1="20" x2="6" y2="10" /><line x1="11" y1="20" x2="11" y2="4" /><line x1="16" y1="20" x2="16" y2="13" />
             </svg>
             <span className="ds-navlist__label">{t('nav.stats')}</span>
+          </button>
+          {/* N-01：追番日历入口 */}
+          <button
+            className={'ds-navlist__item ' + (section === 'calendar' ? 'is-active' : '')}
+            onClick={() => {
+              setSection('calendar')
+              navigate('/calendar')
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="icon">
+              <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <span className="ds-navlist__label">追番日历</span>
+          </button>
+          {/* N-04：观看历史入口 */}
+          <button
+            className={'ds-navlist__item ' + (section === 'history' ? 'is-active' : '')}
+            onClick={() => {
+              setSection('history')
+              navigate('/history')
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="icon">
+              <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" />
+            </svg>
+            <span className="ds-navlist__label">观看历史</span>
           </button>
           <button
             className={'ds-navlist__item ' + (activeFilter === 'recent' && section === 'library' ? 'is-active' : '')}

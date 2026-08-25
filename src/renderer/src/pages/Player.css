@@ -230,6 +230,35 @@
   display: flex;
   align-items: center;
 }
+
+/* O-03：进度条缩略图预览浮层 */
+.player-thumb-preview {
+  position: absolute;
+  bottom: 24px;
+  width: 160px;
+  border-radius: var(--radius-4);
+  overflow: hidden;
+  border: 1px solid var(--border-neutral-l2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 5;
+  background: var(--bg-base-secondary);
+}
+.player-thumb-preview img {
+  display: block;
+  width: 160px;
+  height: 90px;
+  object-fit: cover;
+}
+.player-thumb-preview__time {
+  display: block;
+  padding: 2px 6px;
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+}
 .player-progress__range {
   position: absolute;
   inset: 0;

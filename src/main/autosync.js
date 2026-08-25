@@ -15,7 +15,9 @@ function countEpisodes() {
   return store.list().reduce((n, a) => n + (a.episodes || []).length, 0)
 }
 
-function notify(title, body) {
+// UX-08：通知点击除唤起窗口外，还携带目标路径通知渲染层导航——
+// 新番通知直达其详情页，形成完整转化闭环
+function notify(title, body, clickPath) {
   if (!Notification.isSupported()) return
   const win = BrowserWindow.getAllWindows()[0]
   const n = new Notification({ title, body })
@@ -24,6 +26,9 @@ function notify(title, body) {
       if (win.isMinimized()) win.restore()
       win.show()
       win.focus()
+      if (clickPath && !win.isDestroyed()) {
+        win.webContents.send('app:navigate', clickPath)
+      }
     }
   })
   n.show()
@@ -60,7 +65,9 @@ async function runOnce() {
       if (addedAnime) parts.push(`发现 ${addedAnime} 部新番剧`)
       if (updatedAnime) parts.push(`${updatedAnime} 部番剧更新${newEpisodes ? `（新增 ${newEpisodes} 集）` : ''}`)
       if (removedAnime) parts.push(`移除 ${removedAnime} 部失效条目`)
-      notify('AnimeRepo · 媒体库更新', parts.join('，'))
+      // UX-08：优先定位到首个新增番剧的详情页
+      const firstAdded = res.changedAnimes && res.changedAnimes[0]
+      notify('AnimeRepo · 媒体库更新', parts.join('，'), firstAdded ? `/anime/${firstAdded.id}` : undefined)
     }
   } catch (e) {
     // 后台扫描失败静默忽略，不影响用户操作

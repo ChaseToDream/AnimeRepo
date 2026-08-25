@@ -28,6 +28,16 @@ const api = {
     ipcRenderer.on('library:changed', listener)
     return () => ipcRenderer.removeListener('library:changed', listener)
   },
+  // UX-08：订阅通知点击导航事件，返回取消订阅函数
+  onNavigate: (cb) => {
+    const listener = (_e, path) => cb(path)
+    ipcRenderer.on('app:navigate', listener)
+    return () => ipcRenderer.removeListener('app:navigate', listener)
+  },
+  // O-04：观看历史
+  getWatchHistory: () => ipcRenderer.invoke('history:get'),
+  // N-01：追番日历
+  fetchCalendar: () => ipcRenderer.invoke('calendar:fetch'),
   updateAnime: (id, patch) => ipcRenderer.invoke('anime:update', id, patch),
   removeAnime: (id) => ipcRenderer.invoke('anime:remove', id),
   batchAnime: (op) => ipcRenderer.invoke('anime:batch', op),
@@ -50,6 +60,7 @@ const api = {
   // —— 系统 ——
   openFolder: (p) => ipcRenderer.invoke('shell:open-folder', p),
   getVersion: () => ipcRenderer.invoke('app:version'),
+  checkUpdate: () => ipcRenderer.invoke('app:check-update'),
   // —— N-02：外部播放器 ——
   openExternalPlayer: (filePath) => ipcRenderer.invoke('player:open-external', filePath),
   pickExecutable: () => ipcRenderer.invoke('dialog:pick-executable'),

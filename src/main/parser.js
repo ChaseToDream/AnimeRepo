@@ -49,11 +49,14 @@ function parseEpisodeNumber(text) {
 }
 
 // 初步拆分：尝试去除发布组/分辨率等噪声
+// B-08 修复：「版」原先无条件删除，标题中任意位置的「版」字（如「我的版本故事」）
+// 都会被破坏成错误标题，进而导致 titleKey 与在线元数据匹配失败；
+// 现仅在「剧场版/特别版/新版/重制版/修正版/完整版」等整词连用时移除
 function cleanTitlePart(raw) {
   return raw
     .replace(/\b(?:1080p|720p|2160p|4k|8k|HEVC|x264|x265|H\.264|H\.265|AVC|AV1|Hi10P|BDRip|BDMV|WEB-DL|WEBRip|HDR|DV|10bit|8bit)\b/gi, ' ')
     .replace(/[\[\]【】]/g, ' ')
-    .replace(/版|中文字幕|简繁|[Aa]ss|[Ss]rt/g, ' ')
+    .replace(/(?:剧场|特别|新|重制|修正|完整)版|中文字幕|简繁|[Aa]ss|[Ss]rt/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[-—–]+$/g, '')

@@ -84,6 +84,8 @@ function Switch({ checked, onChange, disabled }) {
 function Select({ value, options, onChange, width, disabled }) {
   const display = (o) => (typeof o === 'object' ? o.value : o)
   const label = (o) => (typeof o === 'object' ? o.label : o)
+  // B-07：支持单项禁用（如未上线的语言选项）
+  const itemDisabled = (o) => typeof o === 'object' && Boolean(o.disabled)
   return (
     <select
       className="ds-select"
@@ -93,7 +95,7 @@ function Select({ value, options, onChange, width, disabled }) {
       onChange={(e) => onChange(e.target.value)}
     >
       {options.map((o) => (
-        <option key={display(o)} value={display(o)}>{label(o)}</option>
+        <option key={display(o)} value={display(o)} disabled={itemDisabled(o)}>{label(o)}</option>
       ))}
     </select>
   )
@@ -656,7 +658,13 @@ export default function Settings() {
                   control={
                     <Select
                       value={settings.uiLanguage}
-                      options={['简体中文', '繁体中文', 'English', '日本語']}
+                      // B-07：字典尚未覆盖的语言以禁用态呈现，避免选择后静默回退中文的误导
+                      options={[
+                        '简体中文',
+                        { value: '繁体中文', label: '繁体中文（即将支持）', disabled: true },
+                        'English',
+                        { value: '日本語', label: '日本語（即将支持）', disabled: true }
+                      ]}
                       onChange={(v) => set({ uiLanguage: v })}
                       width={180}
                     />
@@ -760,7 +768,24 @@ export default function Settings() {
                 <SettingRow
                   title="检查更新"
                   desc="检查是否有新版本可用"
-                  control={<button className="ds-btn ds-btn--secondary" onClick={() => {}}>检查更新</button>}
+                  control={
+                    <button
+                      className="ds-btn ds-btn--secondary"
+                      onClick={async () => {
+                        const res = await api.checkUpdate()
+                        if (!res || !res.ok) {
+                          showToast(res && res.reason === 'network' ? '检查更新失败（网络不可用）' : '更新源尚未配置（发布后启用）', 'info')
+                        } else if (res.hasUpdate) {
+                          showToast(`发现新版本 v${res.latest}（当前 v${res.current}）`, 'success', 6000)
+                          if (res.url && res.url !== '#') window.electron?.shell?.openExternal?.(res.url)
+                        } else {
+                          showToast(`已是最新版本 v${res.current}`, 'success')
+                        }
+                      }}
+                    >
+                      检查更新
+                    </button>
+                  }
                 />
                 <SettingRow
                   title="开源许可"

@@ -38,7 +38,7 @@ function relativeTime(iso) {
 }
 
 export default function Stats() {
-  const { library, settings } = useApp()
+  const { library, settings, history } = useApp()
   const navigate = useNavigate()
   const ratingSystem = settings?.ratingSystem || '10分制'
 
@@ -55,7 +55,8 @@ export default function Stats() {
   const rated = library.filter((a) => a.rating > 0)
   const avgRating = rated.length ? rated.reduce((s, a) => s + a.rating, 0) / rated.length : 0
 
-  // —— 近 7 天观看活动 ——
+  // —— 近 7 天观看活动（O-04：按「看完集数」口径，数据源为观看日志）——
+  // 原口径按 lastWatchedAt 统计番剧数：一部番多天只计最后一天、多次观看也只计一次
   const days = []
   const now = new Date()
   for (let i = 6; i >= 0; i--) {
@@ -63,8 +64,8 @@ export default function Stats() {
     d.setDate(now.getDate() - i)
     days.push({ key: toLocalDateKey(d.toISOString()), label: WEEKDAYS[d.getDay()], count: 0 })
   }
-  library.forEach((a) => {
-    const slot = days.find((d) => d.key === toLocalDateKey(a.lastWatchedAt))
+  history.forEach((h) => {
+    const slot = days.find((d) => d.key === toLocalDateKey(h.watchedAt))
     if (slot) slot.count += 1
   })
   const maxActivity = Math.max(1, ...days.map((d) => d.count))
@@ -169,7 +170,7 @@ export default function Stats() {
           <div className="stats-panel">
             <div className="stats-panel__header">
               <h2 className="stats-panel__title">近 7 天观看活动</h2>
-              <span className="stats-panel__hint">按最近观看日期计番剧数</span>
+              <span className="stats-panel__hint">按看完集数统计</span>
             </div>
             <div className="stats-chart-container">
               <div className="stats-chart__yaxis">

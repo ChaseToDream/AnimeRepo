@@ -42,12 +42,13 @@ const DEFAULT_SETTINGS = {
 }
 
 let dataFile = ''
-let state = { animes: [], settings: { ...DEFAULT_SETTINGS } }
+let state = { animes: [], settings: { ...DEFAULT_SETTINGS }, watchHistory: [] }
 
 function defaultState() {
   return {
     animes: [],
-    settings: { ...DEFAULT_SETTINGS }
+    settings: { ...DEFAULT_SETTINGS },
+    watchHistory: []
   }
 }
 
@@ -71,6 +72,10 @@ function ensureDataFile() {
       }
       if (parsed && parsed.settings && typeof parsed.settings === 'object') {
         state.settings = { ...DEFAULT_SETTINGS, ...parsed.settings }
+      }
+      // O-04：观看日志（历史数据文件无此字段时保持空数组）
+      if (parsed && Array.isArray(parsed.watchHistory)) {
+        state.watchHistory = parsed.watchHistory
       }
     } catch (e) {
       // 数据损坏时回退到默认状态
@@ -135,7 +140,7 @@ function settleWrite() {
 
 function writeLoop() {
   writeDirty = false
-  persistPayload(JSON.stringify({ animes: state.animes, settings: state.settings }, null, 2))
+  persistPayload(JSON.stringify({ animes: state.animes, settings: state.settings, watchHistory: state.watchHistory }, null, 2))
 }
 
 // 退出前同步落盘，确保异步写未完成时数据不丢失
@@ -150,7 +155,7 @@ function flushSaveSync() {
   writeGeneration++
   writeInFlight = false
   try {
-    fs.writeFileSync(dataFile, JSON.stringify({ animes: state.animes, settings: state.settings }, null, 2), 'utf-8')
+    fs.writeFileSync(dataFile, JSON.stringify({ animes: state.animes, settings: state.settings, watchHistory: state.watchHistory }, null, 2), 'utf-8')
   } catch (e) {
     console.error('保存数据失败', e)
   }
@@ -204,6 +209,26 @@ function findByTitleKey(titleKey) {
 
 // —— 剧集进度 ——
 
+// O-04：观看日志——仅在「看完一集」时追加记录（看完=标记已看的瞬间），
+// 供统计页集数口径与观看历史页使用；环形上限 HISTORY_LIMIT 条
+const HISTORY_LIMIT = 500
+
+function recordWatch(anime, ep) {
+  if (!anime || !ep) return
+  state.watchHistory.push({
+    id: 'wh-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+    animeId: anime.id,
+    animeTitle: anime.title,
+    epId: ep.id,
+    epNumber: ep.number,
+    seconds: ep.duration || 0,
+    watchedAt: new Date().toISOString()
+  })
+  if (state.watchHistory.length > HISTORY_LIMIT) {
+    state.watchHistory = state.watchHistory.slice(-HISTORY_LIMIT)
+  }
+}
+
 // 统一计算番剧观看状态（B4 修复：取消全部已看后正确降级）
 // 规则：全部已看 → completed；部分已看或有播放进度 → watching；否则 → plan
 function recalcStatus(anime) {
@@ -226,15 +251,18 @@ function setEpisodeProgress(animeId, epId, seconds, duration) {
   const ep = anime.episodes.find((e) => e.id === epId)
   if (!ep) return null
   ep.progress = Math.round(seconds)
+  let justWatched = false
   if (typeof duration === 'number' && duration > 0) {
     ep.duration = Math.round(duration)
     // B1 修复：播放至结尾（剩余不足 10 秒）自动标记为已看
     // B3 修复：中途更新进度不再覆盖用户显式标记的已看状态
     if (ep.duration - ep.progress <= 10) {
+      justWatched = !ep.watched
       ep.watched = true
       ep.progress = ep.duration
     }
   }
+  if (justWatched) recordWatch(anime, ep)
   const lastModifiedAt = new Date().toISOString()
   anime.lastWatchedEpisode = epId
   anime.lastWatchedAt = lastModifiedAt
@@ -249,6 +277,7 @@ function setEpisodeWatched(animeId, epId, watched) {
   if (!anime) return null
   const ep = anime.episodes.find((e) => e.id === epId)
   if (!ep) return null
+  const justWatched = watched && !ep.watched
   ep.watched = watched
   if (watched) {
     ep.progress = ep.duration || 0
@@ -256,6 +285,7 @@ function setEpisodeWatched(animeId, epId, watched) {
     // 从「已看」取消：清零进度，回到未看状态（供 recalcStatus 正确判定）
     ep.progress = 0
   }
+  if (justWatched) recordWatch(anime, ep)
   anime.updatedAt = new Date().toISOString()
   recalcStatus(anime)
   save()
@@ -271,6 +301,7 @@ function setEpisodesWatchedBulk(animeId, epIds, watched) {
   if (!idSet.size) return anime
   for (const ep of anime.episodes || []) {
     if (!idSet.has(ep.id)) continue
+    if (watched && !ep.watched) recordWatch(anime, ep)
     ep.watched = watched
     if (watched) {
       ep.progress = ep.duration || 0
@@ -282,6 +313,11 @@ function setEpisodesWatchedBulk(animeId, epIds, watched) {
   recalcStatus(anime)
   save()
   return anime
+}
+
+// —— 观看历史（O-04）——
+function getWatchHistory() {
+  return state.watchHistory.slice().reverse() // 新的在前
 }
 
 // —— 设置 ——
@@ -347,6 +383,10 @@ function importJson(json) {
     if (parsed.settings && typeof parsed.settings === 'object') {
       state.settings = { ...DEFAULT_SETTINGS, ...parsed.settings }
     }
+    // O-04：观看日志随导入恢复（结构非法时清空）
+    state.watchHistory = Array.isArray(parsed.watchHistory)
+      ? parsed.watchHistory.filter((h) => h && typeof h === 'object' && h.animeId)
+      : []
     save()
     return { ok: true, imported: valid.length, skipped }
   } catch (e) {
@@ -367,6 +407,7 @@ export {
   setEpisodeProgress,
   setEpisodeWatched,
   setEpisodesWatchedBulk,
+  getWatchHistory,
   getSettings,
   updateSettings,
   dataPath,

@@ -578,14 +578,14 @@ async function doScan(store, folders, settings, onProgress, signal) {
     for (const a of snapshot) {
       // UX-03：清理阶段响应取消
       if (aborted()) break
-      // P5：原 filter + fs.existsSync 逐条同步校验磁盘存在性，大库时阻塞主进程；
-      // 改为循环内异步 access（filter 回调不支持 await）
+      // PF-03：磁盘存在性校验并发化——原先逐集串行 await access，
+      // 2000 集失效库约 3-8s；现按番剧为单位 Promise.all 并发（16 路限流）
       const alive = []
-      for (const e of a.episodes || []) {
-        if (!e.filePath) continue
+      await runPool(a.episodes || [], 16, async (e) => {
+        if (!e.filePath) return
         if (existingFiles.has(e.filePath)) {
           alive.push(e)
-          continue
+          return
         }
         // 属于当前媒体库但未在本次扫描范围内：磁盘上仍存在则保留，避免误删
         if (underCurrentFolders(e.filePath)) {
@@ -597,7 +597,10 @@ async function doScan(store, folders, settings, onProgress, signal) {
           }
         }
         // 媒体库文件夹已被移除或文件已不在任何当前媒体库内：视为失效清理（不入 alive）
-      }
+      })
+      // runPool 并发完成顺序不定，按原 episodes 顺序重排（稳定写库，便于增量比对）
+      const order = new Map((a.episodes || []).map((e, i) => [e, i]))
+      alive.sort((x, y) => order.get(x) - order.get(y))
       if (alive.length === 0) {
         store.remove(a.id)
         removed++

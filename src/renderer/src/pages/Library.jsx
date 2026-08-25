@@ -64,7 +64,7 @@ function PlayIcon() {
 }
 
 export default function Library({ filter, setFilter }) {
-  const { library, scan, scanning, batchAnime, showToast, addFolder, settings, updateAnime, api } = useApp()
+  const { library, scan, scanning, batchAnime, showToast, addFolder, settings, updateAnime, api, loading } = useApp()
   const navigate = useNavigate()
   // UX-04：视图/排序从上次会话恢复（默认网格 + 添加时间）
   const [uiPrefs] = useState(loadUiPrefs)
@@ -394,7 +394,19 @@ export default function Library({ filter, setFilter }) {
       </div>
 
       <div className="library__scroll">
-        {library.length === 0 ? (
+        {/* UX-06：首屏加载骨架——库数据从主进程加载期间显示 shimmer 占位，
+            消除启动时短暂白屏/引导页闪烁（引导页仅在真正空库时出现） */}
+        {loading && library.length === 0 ? (
+          <div className="library-skeleton">
+            {Array.from({ length: 12 }, (_, i) => (
+              <div className="library-skeleton__card" key={i}>
+                <div className="library-skeleton__poster" />
+                <div className="library-skeleton__line" />
+                <div className="library-skeleton__line library-skeleton__line--short" />
+              </div>
+            ))}
+          </div>
+        ) : library.length === 0 ? (
           <div className="library-empty library-empty--wizard">
             <div className="wizard-icon">
               <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

@@ -35,6 +35,8 @@ export function AppProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [version, setVersion] = useState('1.0.0')
+  // O-04：观看日志（新的在前）
+  const [history, setHistory] = useState([])
   // U2：全局 Toast
   const [toasts, setToasts] = useState([])
   const showToast = useCallback((message, type = 'info', duration = 2500) => {
@@ -98,6 +100,19 @@ export function AppProvider({ children }) {
     if (!api?.onLibraryChanged) return undefined
     return api.onLibraryChanged((delta) => applyDelta(delta))
   }, [applyDelta])
+
+  // O-04：拉取观看日志（历史/统计页挂载时调用；轻量，上限 500 条）
+  const loadHistory = useCallback(async () => {
+    try {
+      const h = await api.getWatchHistory()
+      if (Array.isArray(h)) setHistory(h)
+    } catch (e) {
+      /* 忽略 */
+    }
+  }, [])
+  useEffect(() => {
+    loadHistory()
+  }, [loadHistory])
 
   // B6：强调色在应用启动时即应用（不再依赖进入设置页），设置变更时同步生效
   useEffect(() => {
@@ -208,11 +223,13 @@ export function AppProvider({ children }) {
   }, [])
 
   // N4：批量操作（PF-02：主进程返回增量，本地合并）
+  // mark-watched 会在主进程追加观看日志，完成后刷新历史
   const batchAnime = useCallback(async (action, ids, payload) => {
     const delta = await api.batchAnime({ action, ids, payload })
     applyDelta(delta)
+    if (action === 'mark-watched') loadHistory()
     return delta
-  }, [applyDelta])
+  }, [applyDelta, loadHistory])
 
   // N3：合并 / 拆分番剧（PF-02：增量合并）
   const mergeAnime = useCallback(async (fromId, toId) => {
@@ -241,10 +258,12 @@ export function AppProvider({ children }) {
       const updated = await api.setProgress(animeId, epId, seconds, duration)
       if (updated) {
         setLibrary((prev) => prev.map((a) => (a.id === animeId ? updated : a)))
+        // O-04：播放至结尾自动标记已看会写观看日志
+        loadHistory()
       }
       return updated
     },
-    []
+    [loadHistory]
   )
 
   // P4-5：静默保存播放进度——只写主进程存储，不回流全局 library state，
@@ -257,9 +276,11 @@ export function AppProvider({ children }) {
     const updated = await api.setWatched(animeId, epId, watched)
     if (updated) {
       setLibrary((prev) => prev.map((a) => (a.id === animeId ? updated : a)))
+      // O-04：标记已看会写观看日志
+      if (watched) loadHistory()
     }
     return updated
-  }, [])
+  }, [loadHistory])
 
   const updateSettings = useCallback(async (patch) => {
     const next = await api.updateSettings(patch)
@@ -291,6 +312,8 @@ export function AppProvider({ children }) {
       loading,
       scanning,
       version,
+      history,
+      loadHistory,
       refresh,
       scan,
       getAnime,
@@ -317,6 +340,8 @@ export function AppProvider({ children }) {
       loading,
       scanning,
       version,
+      history,
+      loadHistory,
       t,
       refresh,
       scan,

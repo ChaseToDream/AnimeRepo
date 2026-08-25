@@ -98,6 +98,25 @@
   overflow-y: auto;
 }
 .ds-navlist__search { margin-bottom: var(--spacer-4); }
+/* UX-05：搜索框清空按钮 */
+.ds-navlist__search-box { position: relative; }
+.ds-navlist__search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-2);
+}
+.ds-navlist__search-clear:hover { background: var(--bg-overlay-l2); color: var(--text-default); }
 .ds-navlist__group { display: flex; flex-direction: column; gap: 2px; }
 .ds-navlist__group-title {
   padding: var(--spacer-6) var(--spacer-8);

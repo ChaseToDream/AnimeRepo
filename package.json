@@ -11,6 +11,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
+    "test": "node --test \"tests/**/*.test.mjs\"",
     "build:win": "electron-vite build && electron-builder --win"
   },
   "dependencies": {
