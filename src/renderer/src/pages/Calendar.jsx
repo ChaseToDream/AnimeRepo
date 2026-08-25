@@ -32,6 +32,8 @@ export default function Calendar() {
   const { library } = useApp()
   const navigate = useNavigate()
   const [state, setState] = useState({ loading: true, ok: true, items: [] })
+  // B-8：手动重试计数（失败后可点击重试，无需离开页面重新进入）
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -43,7 +45,7 @@ export default function Calendar() {
       if (!cancelled) setState({ loading: false, ok: false, items: [] })
     })
     return () => { cancelled = true }
-  }, [library.length])
+  }, [library.length, attempt])
 
   const now = Date.now()
   // 近 7 天（含今天）按日分组；无放送时间（已完结/查询失败）的番单独归组
@@ -90,6 +92,13 @@ export default function Calendar() {
             {!state.ok && (
               <div className="calendar-warn">
                 部分或全部放送时间获取失败（网络不可达），稍后打开此页会自动重试。
+                <button
+                  className="ds-btn ds-btn--sm ds-btn--secondary"
+                  style={{ marginLeft: 8 }}
+                  onClick={() => setAttempt((a) => a + 1)}
+                >
+                  重试
+                </button>
               </div>
             )}
             <div className="calendar-grid">

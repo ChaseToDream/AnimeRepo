@@ -10,6 +10,7 @@ import Stats from './pages/Stats'
 import History from './pages/History'
 import Calendar from './pages/Calendar'
 import Settings from './pages/Settings'
+import ShortcutHelp from './components/ShortcutHelp'
 
 // P6：全局 Error Boundary——渲染期未捕获异常原先会卸载整棵 React 树，
 // 窗口只剩白屏且无法恢复（本次白屏卡死的放大器）。兜底为可见的错误页 + 一键刷新。
@@ -192,17 +193,21 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<ShellLayout activeFilter={filter.status} onFilterChange={handleFilterChange} />}>
-        <Route index element={<Library filter={filter} setFilter={setFilter} />} />
-        <Route path="stats" element={<Stats />} />
-        <Route path="history" element={<History />} />
-        <Route path="calendar" element={<Calendar />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-      <Route path="/anime/:id" element={<Detail />} />
-      <Route path="/player/:animeId/:epId" element={<Player />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<ShellLayout activeFilter={filter.status} onFilterChange={handleFilterChange} />}>
+          <Route index element={<Library filter={filter} setFilter={setFilter} />} />
+          <Route path="stats" element={<Stats />} />
+          <Route path="history" element={<History />} />
+          <Route path="calendar" element={<Calendar />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+        <Route path="/anime/:id" element={<Detail />} />
+        <Route path="/player/:animeId/:epId" element={<Player />} />
+      </Routes>
+      {/* UX-2：全局快捷键帮助（? / F1 唤起），覆盖所有页面 */}
+      <ShortcutHelp />
+    </>
   )
 }
 

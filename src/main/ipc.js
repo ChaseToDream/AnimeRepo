@@ -366,6 +366,8 @@ export function registerIpc() {
   // 轻量方案：比对 GitHub Releases latest 与当前版本，无需 electron-updater。
   // 发布地址未配置时返回 unconfigured（开源项目发布前占位）。
   const GITHUB_REPO = '' // TODO: 发布时填入 'owner/anime-repo'
+  // B-7：发布源未配置时渲染层隐藏「检查更新」入口，避免无意义占位按钮
+  ipcMain.handle('app:has-update-source', () => Boolean(GITHUB_REPO))
   ipcMain.handle('app:check-update', async () => {
     if (!GITHUB_REPO) return { ok: false, reason: 'unconfigured' }
     try {

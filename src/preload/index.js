@@ -61,6 +61,8 @@ const api = {
   openFolder: (p) => ipcRenderer.invoke('shell:open-folder', p),
   getVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('app:check-update'),
+  // B-7：更新源是否已配置（未配置时不展示检查更新入口）
+  hasUpdateSource: () => ipcRenderer.invoke('app:has-update-source'),
   // —— N-02：外部播放器 ——
   openExternalPlayer: (filePath) => ipcRenderer.invoke('player:open-external', filePath),
   pickExecutable: () => ipcRenderer.invoke('dialog:pick-executable'),

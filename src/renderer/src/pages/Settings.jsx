@@ -145,6 +145,11 @@ function EditableTags({ value = [], onChange }) {
 export default function Settings() {
   const { settings, updateSettings, addFolder, removeFolder, refresh, version, api, library, showToast } = useApp()
   const [activeSection, setActiveSection] = useState('library')
+  // B-7：更新源是否已配置（未配置时隐藏「检查更新」入口，避免无意义占位按钮）
+  const [updateSourceConfigured, setUpdateSourceConfigured] = useState(true)
+  useEffect(() => {
+    api.hasUpdateSource().then((v) => setUpdateSourceConfigured(v !== false)).catch(() => {})
+  }, [])
   // B-03：应用内确认对话框状态（替换原生 confirm）
   const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
@@ -765,28 +770,30 @@ export default function Settings() {
                   desc="一款专为动漫爱好者设计的番剧管理工具"
                   control={<span className="ds-tag ds-tag--brand">v{version}</span>}
                 />
-                <SettingRow
-                  title="检查更新"
-                  desc="检查是否有新版本可用"
-                  control={
-                    <button
-                      className="ds-btn ds-btn--secondary"
-                      onClick={async () => {
-                        const res = await api.checkUpdate()
-                        if (!res || !res.ok) {
-                          showToast(res && res.reason === 'network' ? '检查更新失败（网络不可用）' : '更新源尚未配置（发布后启用）', 'info')
-                        } else if (res.hasUpdate) {
-                          showToast(`发现新版本 v${res.latest}（当前 v${res.current}）`, 'success', 6000)
-                          if (res.url && res.url !== '#') window.electron?.shell?.openExternal?.(res.url)
-                        } else {
-                          showToast(`已是最新版本 v${res.current}`, 'success')
-                        }
-                      }}
-                    >
-                      检查更新
-                    </button>
-                  }
-                />
+                {updateSourceConfigured && (
+                  <SettingRow
+                    title="检查更新"
+                    desc="检查是否有新版本可用"
+                    control={
+                      <button
+                        className="ds-btn ds-btn--secondary"
+                        onClick={async () => {
+                          const res = await api.checkUpdate()
+                          if (!res || !res.ok) {
+                            showToast(res && res.reason === 'network' ? '检查更新失败（网络不可用）' : '更新源尚未配置（发布后启用）', 'info')
+                          } else if (res.hasUpdate) {
+                            showToast(`发现新版本 v${res.latest}（当前 v${res.current}）`, 'success', 6000)
+                            if (res.url && res.url !== '#') window.electron?.shell?.openExternal?.(res.url)
+                          } else {
+                            showToast(`已是最新版本 v${res.current}`, 'success')
+                          }
+                        }}
+                      >
+                        检查更新
+                      </button>
+                    }
+                  />
+                )}
                 <SettingRow
                   title="开源许可"
                   desc="查看本应用使用的开源组件及许可证"

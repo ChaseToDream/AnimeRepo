@@ -426,8 +426,23 @@ export default function Library({ filter, setFilter }) {
             <div className="library-empty__title">欢迎使用 AnimeRepo 溯番</div>
             <div className="library-empty__desc">三步开始你的番剧库：</div>
             <div className="wizard-steps">
-              <div className="wizard-step"><span className="wizard-step__num">1</span>添加媒体库文件夹（存放番剧视频的目录）</div>
-              <div className="wizard-step"><span className="wizard-step__num">2</span>自动扫描并识别番剧与剧集</div>
+              {/* UX-4：步骤可点击直达——步骤 1 打开文件夹选择、步骤 2 立即扫描 */}
+              <div
+                className="wizard-step"
+                style={{ cursor: 'pointer' }}
+                title="点击添加媒体库文件夹"
+                onClick={handleAddFolder}
+              >
+                <span className="wizard-step__num">1</span>添加媒体库文件夹（存放番剧视频的目录）
+              </div>
+              <div
+                className="wizard-step"
+                style={{ cursor: 'pointer' }}
+                title="点击立即扫描媒体库"
+                onClick={() => scan()}
+              >
+                <span className="wizard-step__num">2</span>自动扫描并识别番剧与剧集
+              </div>
               <div className="wizard-step"><span className="wizard-step__num">3</span>开始观看并记录进度</div>
             </div>
             <div className="library-empty__actions">

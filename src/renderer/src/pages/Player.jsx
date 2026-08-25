@@ -95,6 +95,9 @@ export default function Player() {
   const videoContainerRef = useRef(null)
   // UX-1：沉浸层——无操作自动隐藏标题栏/控制栏的计时器
   const uiTimerRef = useRef(null)
+  // P-4：进度条缩略图预览 rAF 节流（高频 mousemove 合并为每帧一次 setState）
+  const thumbRafRef = useRef(null)
+  const pendingThumbRef = useRef(null)
   // UX-07：单击/双击区分计时器（双击全屏时取消误触发的单击暂停）
   const clickTimerRef = useRef(null)
   // UX-07：全屏函数引用（供双击处理器在 fullscreen 声明前引用）
@@ -152,6 +155,8 @@ export default function Player() {
   const handleMouseMove = useCallback(() => showUi(), [showUi])
   // 卸载时清理沉浸层计时器
   useEffect(() => () => { if (uiTimerRef.current) clearTimeout(uiTimerRef.current) }, [])
+  // P-4：卸载时取消挂起的缩略图预览 rAF
+  useEffect(() => () => { if (thumbRafRef.current) cancelAnimationFrame(thumbRafRef.current) }, [])
 
   // —— O-03：进度条缩略图预览 ——
   // 用独立的隐藏 video 元素后台 seek 抓帧（不影响正在播放的主 video），
@@ -697,12 +702,17 @@ export default function Player() {
             <div
               className="player-progress"
               onMouseMove={(e) => {
-                // 必须在事件分发期间同步读取 rect（同 P6 白屏修复的教训）
+                // 必须在事件分发期间同步读取 rect（同 P6 白屏修复的教训），
+                // P-4：结果合并到 rAF 每帧一次 setState，避免高频缩略图重渲染
                 const rect = e.currentTarget.getBoundingClientRect()
-                const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-                setThumbPreview({ pct })
+                pendingThumbRef.current = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+                if (thumbRafRef.current) return
+                thumbRafRef.current = requestAnimationFrame(() => {
+                  thumbRafRef.current = null
+                  setThumbPreview(pendingThumbRef.current != null ? { pct: pendingThumbRef.current } : null)
+                })
               }}
-              onMouseLeave={() => setThumbPreview(null)}
+              onMouseLeave={() => { pendingThumbRef.current = null; setThumbPreview(null) }}
             >
               {/* O-03：缩略图预览浮层（抓帧完成前不显示） */}
               {thumbs.length > 0 && thumbPreview && (
