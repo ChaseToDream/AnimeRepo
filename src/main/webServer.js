@@ -13,6 +13,7 @@ import { resolve, sep } from 'path'
 import crypto from 'crypto'
 import { getSettings, updateSettings, list } from './store'
 import { getCoverDir } from './coverCache'
+import { decodeTextBuffer } from './encoding'
 
 const VIDEO_MIME = {
   '.mp4': 'video/mp4',
@@ -188,10 +189,11 @@ function findSubtitleFor(videoFile) {
 }
 
 // F-8：字幕 → WebVTT 文本（支持 SRT / ASS / SSA；VTT 原样返回）
+// V3-3：按编码探测解码（与桌面端一致支持 GBK/UTF-16 字幕）
 function subtitleToVtt(subPath) {
   let text
   try {
-    text = fs.readFileSync(subPath, 'utf-8')
+    text = decodeTextBuffer(fs.readFileSync(subPath))
   } catch (e) {
     return ''
   }

@@ -19,11 +19,12 @@ function folderList() {
 }
 
 function onEvent() {
-  // 高频事件（批量解压/复制等）合并为一次扫描
+  // 高频事件（批量解压/复制等）合并为一次扫描；
+  // V3-1：force=true——文件监控触发不受“启动时自动扫描”开关阻塞
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
     debounceTimer = null
-    runAutoSync()
+    runAutoSync(true)
   }, EVENT_DEBOUNCE_MS)
 }
 

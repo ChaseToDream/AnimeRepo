@@ -1,6 +1,6 @@
 // IPC 处理器：注册所有渲染进程可调用的通道
 import { ipcMain, dialog, app, shell, BrowserWindow } from 'electron'
-import { execFile, exec } from 'child_process'
+import { execFile } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import * as store from './store'
@@ -10,31 +10,9 @@ import { saveLocalCover, cacheCover } from './coverCache'
 import { fetchAiringSchedule, fetchOnline, offlineDefaults } from './metadata'
 import { getWebInfo, startWebServer, stopWebServer, resetToken } from './webServer'
 import { restartFileWatch } from './fileWatcher'
+import { decodeTextBuffer } from './encoding'
 
 const SUBTITLE_EXTS = ['.srt', '.ass', '.ssa', '.vtt', '.sub']
-
-// B-2 修复：字幕解码——国内 .srt/.ass 字幕大量使用 GBK/GB18030 编码，
-// 原实现硬编码 utf-8 导致中文乱码。解码策略（零依赖，利用 Electron
-// 内置 full-icu TextDecoder）：
-// 1) BOM 判定：UTF-16 LE/BE、UTF-8 BOM 直接按对应编码解码；
-// 2) 无 BOM：先尝试严格 UTF-8（fatal），成功即用（兼容纯 ASCII 与合法 UTF-8）；
-// 3) 严格 UTF-8 失败：回退 GB18030（GBK 超集，任意字节序列均可解码，不会抛错）。
-function decodeSubtitle(buf) {
-  if (!buf || !buf.length) return ''
-  if (buf.length >= 2) {
-    if (buf[0] === 0xff && buf[1] === 0xfe) return new TextDecoder('utf-16le').decode(buf.subarray(2))
-    if (buf[0] === 0xfe && buf[1] === 0xff) return new TextDecoder('utf-16be').decode(buf.subarray(2))
-  }
-  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
-    return new TextDecoder('utf-8').decode(buf.subarray(3))
-  }
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
-  } catch (e) {
-    // 非纯 UTF-8：按简体中文环境最常见的 GB18030 解码
-    return new TextDecoder('gb18030').decode(buf)
-  }
-}
 
 // 扫描进度推送：向发起扫描的窗口发送 scan:progress 事件
 // P2 修复：节流合并高频进度——大库扫描每发现一个文件都会触发一次进度，
@@ -117,15 +95,20 @@ export function registerIpc() {
   ipcMain.handle('anime:remove', (_e, id) => store.remove(id))
 
   // —— F-7：手动添加“想看”占位条目（无剧集文件，供追更/占位） ——
+  // V3-2：标题查重——同名条目已存在时不重复创建，返回 exists 供前端提示
   ipcMain.handle('anime:create', (_e, title) => {
     const t = String(title || '').trim()
     if (!t) return null
+    const key = titleKey(t)
+    if (store.findByTitleKey(key)) {
+      return { ok: false, exists: true, title: t }
+    }
     const id = 'anime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
     const info = offlineDefaults(t, 1, 0)
     const now = new Date().toISOString()
-    return store.upsert({
+    const anime = store.upsert({
       id,
-      titleKey: titleKey(t),
+      titleKey: key,
       title: t,
       englishTitle: '',
       romaji: '',
@@ -147,6 +130,7 @@ export function registerIpc() {
       createdAt: now,
       updatedAt: now
     })
+    return { ok: true, anime }
   })
 
   // —— 批量操作（N4）——
@@ -467,12 +451,14 @@ export function registerIpc() {
       return { ok: false, error: '文件不在媒体库文件夹内' }
     }
     try {
-      // N-1 修复：.bat/.cmd/.ps1/.sh 等脚本无法用 execFile 直接执行（Windows 抛 EINVAL），
-      // 需经 shell 调用（路径加引号防空格）；.exe 保持 execFile，避免 shell 注入面。
+      // N-1：.bat/.cmd/.ps1 等脚本无法用 execFile 直接执行（Windows 抛 EINVAL），
+      // V3-4：脚本经系统 shell（ComSpec）以参数数组方式启动，避免路径含引号被截断；
+      //       .exe 保持直启，避免 shell 注入面。
       const ext = path.extname(player).toLowerCase()
       let child
-      if (ext === '.bat' || ext === '.cmd' || ext === '.ps1' || ext === '.sh') {
-        child = exec(`"${player}" "${filePath}"`, { detached: true, windowsHide: true }, () => {})
+      if (ext === '.bat' || ext === '.cmd' || ext === '.ps1') {
+        const shell = process.env.ComSpec || 'cmd.exe'
+        child = execFile(shell, ['/c', player, filePath], { detached: true, windowsHide: true }, () => {})
       } else {
         child = execFile(player, [filePath], { detached: true, windowsHide: true }, () => {})
       }
@@ -545,8 +531,8 @@ export function registerIpc() {
     try {
       if (!filePath || !fs.existsSync(filePath)) return null
       if (!SUBTITLE_EXTS.includes(path.extname(filePath).toLowerCase())) return null
-      // B-2：按字节读取后做编码探测（UTF-8/UTF-16/GBK），替代硬编码 utf-8
-      return decodeSubtitle(fs.readFileSync(filePath))
+      // B-2/V3-3：按字节读取后做编码探测（UTF-8/UTF-16/GBK），替代硬编码 utf-8
+      return decodeTextBuffer(fs.readFileSync(filePath))
     } catch (e) {
       return null
     }

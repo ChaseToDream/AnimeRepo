@@ -230,11 +230,13 @@ export function AppProvider({ children }) {
     setLibrary((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
-  // F-7：手动添加“想看”占位条目（追加到库尾）
+  // F-7：手动添加“想看”占位条目（追加到库尾；V3-2：返回完整结果 {ok,exists,anime}）
   const createAnime = useCallback(async (title) => {
-    const created = await api.createAnime(title)
-    if (created) setLibrary((prev) => [...prev, created])
-    return created
+    const res = await api.createAnime(title)
+    if (res && res.ok && res.anime) {
+      setLibrary((prev) => [...prev, res.anime])
+    }
+    return res
   }, [])
 
   // N4：批量操作（PF-02：主进程返回增量，本地合并）

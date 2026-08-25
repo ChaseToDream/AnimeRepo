@@ -726,8 +726,14 @@ export default function Library({ filter, setFilter }) {
           setAddOpen(false)
           const title = (text || '').trim()
           if (!title) return
-          const created = await createAnime(title)
-          showToast(created ? `已添加「${created.title}」到想看` : '添加失败', created ? 'success' : 'error')
+          const res = await createAnime(title)
+          if (res && res.exists) {
+            showToast('库中已存在同名番剧，未重复添加', 'warning')
+          } else if (res && res.ok) {
+            showToast(`已添加「${res.anime.title}」到想看`, 'success')
+          } else {
+            showToast('添加失败', 'error')
+          }
         }}
         onCancel={() => setAddOpen(false)}
       />
