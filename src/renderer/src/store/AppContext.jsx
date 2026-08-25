@@ -213,32 +213,61 @@ export function AppProvider({ children }) {
   // N7：基于 uiLanguage 的翻译函数
   const t = useMemo(() => createTranslator(settings?.uiLanguage), [settings?.uiLanguage])
 
-  const value = {
-    library,
-    settings,
-    loading,
-    scanning,
-    scanProgress,
-    version,
-    refresh,
-    scan,
-    getAnime,
-    updateAnime,
-    removeAnime,
-    batchAnime,
-    mergeAnime,
-    splitAnime,
-    setProgress,
-    setProgressSilent,
-    setWatched,
-    updateSettings,
-    addFolder,
-    removeFolder,
-    showToast,
-    dismissToast,
-    t,
-    api
-  }
+  // P1-4.2：value 用 useMemo 包裹——toast 等高频状态变化时（其余 state 未变）保持 value 引用稳定，
+  // 让所有 useApp 消费者跳过无谓重渲染（toasts 由 <Toasts> 组件直接通过 props 消费，不在 value 内）
+  const value = useMemo(
+    () => ({
+      library,
+      settings,
+      loading,
+      scanning,
+      scanProgress,
+      version,
+      refresh,
+      scan,
+      getAnime,
+      updateAnime,
+      removeAnime,
+      batchAnime,
+      mergeAnime,
+      splitAnime,
+      setProgress,
+      setProgressSilent,
+      setWatched,
+      updateSettings,
+      addFolder,
+      removeFolder,
+      showToast,
+      dismissToast,
+      t,
+      api
+    }),
+    [
+      library,
+      settings,
+      loading,
+      scanning,
+      scanProgress,
+      version,
+      t,
+      refresh,
+      scan,
+      getAnime,
+      updateAnime,
+      removeAnime,
+      batchAnime,
+      mergeAnime,
+      splitAnime,
+      setProgress,
+      setProgressSilent,
+      setWatched,
+      updateSettings,
+      addFolder,
+      removeFolder,
+      showToast,
+      dismissToast
+    ]
+  )
 
   return (
     <AppContext.Provider value={value}>

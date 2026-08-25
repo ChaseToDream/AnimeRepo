@@ -70,16 +70,22 @@ function ensureDataFile() {
   }
 }
 
-// P4-3：数据落盘改为「合并写」——连续多次变更合并为一次异步写入，
-// 避免每次进度保存都全量同步写文件阻塞主进程
+// P4-3：数据落盘改为「防抖 + 合并写」——连续多次变更合并为一次异步写入，
+// 避免每次进度保存都全量同步写文件阻塞主进程；退出前由 flushSaveSync 同步兜底
 let writeDirty = false
 let writeInFlight = false
+let writeTimer = null
+const WRITE_DEBOUNCE = 300
 
 function save() {
   writeDirty = true
-  if (writeInFlight) return
-  writeInFlight = true
-  writeLoop()
+  // 已有防抖定时器或写盘在进行中：等待合并，由定时器/写盘完成后的兜底逻辑统一落盘
+  if (writeInFlight || writeTimer) return
+  writeTimer = setTimeout(() => {
+    writeTimer = null
+    writeInFlight = true
+    writeLoop()
+  }, WRITE_DEBOUNCE)
 }
 
 function writeLoop() {
@@ -95,6 +101,10 @@ function writeLoop() {
 // 退出前同步落盘，确保异步写未完成时数据不丢失
 function flushSaveSync() {
   writeDirty = false
+  if (writeTimer) {
+    clearTimeout(writeTimer)
+    writeTimer = null
+  }
   try {
     fs.writeFileSync(dataFile, JSON.stringify({ animes: state.animes, settings: state.settings }, null, 2), 'utf-8')
   } catch (e) {
