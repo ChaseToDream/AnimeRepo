@@ -702,11 +702,11 @@ export default function Settings() {
                   control={
                     <Select
                       value={settings.uiLanguage}
-                      // B-07：字典尚未覆盖的语言以禁用态呈现，避免选择后静默回退中文的误导
+                      // N-2：i18n 字典尚未完整覆盖全界面，English 暂以禁用态呈现，避免选择后半成品误导
                       options={[
                         '简体中文',
                         { value: '繁体中文', label: '繁体中文（即将支持）', disabled: true },
-                        'English',
+                        { value: 'English', label: 'English（即将支持）', disabled: true },
                         { value: '日本語', label: '日本語（即将支持）', disabled: true }
                       ]}
                       onChange={(v) => set({ uiLanguage: v })}
@@ -905,7 +905,17 @@ export default function Settings() {
                 <SettingRow
                   title="开源许可"
                   desc="查看本应用使用的开源组件及许可证"
-                  control={<button className="ds-btn ds-btn--link" onClick={() => {}}>查看许可</button>}
+                  control={
+                    <button
+                      className="ds-btn ds-btn--link"
+                      onClick={async () => {
+                        const opened = await api.openLicense()
+                        showToast(opened ? '已打开许可文件' : '未找到 LICENSE 文件', opened ? 'success' : 'warning')
+                      }}
+                    >
+                      查看许可
+                    </button>
+                  }
                 />
               </div>
               <div className="settings-about-footer">

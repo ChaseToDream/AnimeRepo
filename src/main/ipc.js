@@ -1,6 +1,6 @@
 // IPC 处理器：注册所有渲染进程可调用的通道
 import { ipcMain, dialog, app, shell, BrowserWindow } from 'electron'
-import { execFile } from 'child_process'
+import { execFile, exec } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import * as store from './store'
@@ -369,6 +369,19 @@ export function registerIpc() {
   const GITHUB_REPO = '' // TODO: 发布时填入 'owner/anime-repo'
   // B-7：发布源未配置时渲染层隐藏「检查更新」入口，避免无意义占位按钮
   ipcMain.handle('app:has-update-source', () => Boolean(GITHUB_REPO))
+  // N-5：打开项目 LICENSE 文件（系统默认编辑器）
+  ipcMain.handle('app:open-license', () => {
+    try {
+      const licensePath = path.join(app.getAppPath(), 'LICENSE')
+      if (fs.existsSync(licensePath)) {
+        shell.openPath(licensePath)
+        return true
+      }
+      return false
+    } catch (e) {
+      return false
+    }
+  })
   ipcMain.handle('app:check-update', async () => {
     if (!GITHUB_REPO) return { ok: false, reason: 'unconfigured' }
     try {
@@ -413,8 +426,16 @@ export function registerIpc() {
       return { ok: false, error: '文件不在媒体库文件夹内' }
     }
     try {
+      // N-1 修复：.bat/.cmd/.ps1/.sh 等脚本无法用 execFile 直接执行（Windows 抛 EINVAL），
+      // 需经 shell 调用（路径加引号防空格）；.exe 保持 execFile，避免 shell 注入面。
+      const ext = path.extname(player).toLowerCase()
+      let child
+      if (ext === '.bat' || ext === '.cmd' || ext === '.ps1' || ext === '.sh') {
+        child = exec(`"${player}" "${filePath}"`, { detached: true, windowsHide: true }, () => {})
+      } else {
+        child = execFile(player, [filePath], { detached: true, windowsHide: true }, () => {})
+      }
       // detached + unref：播放器生命周期独立于本应用，退出 AnimeRepo 不影响播放
-      const child = execFile(player, [filePath], { detached: true, windowsHide: true }, () => {})
       child.unref()
       return { ok: true }
     } catch (e) {

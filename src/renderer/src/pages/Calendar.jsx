@@ -14,10 +14,12 @@ function fmtTime(ts) {
 }
 
 // 放送时间相对描述：<0 已播出 / 分钟级 / 小时级 / 天级
+// N-3：不足 1 分钟显示「不到 1 分钟」，避免整分钟边界出现「0 分钟后」
 function fmtCountdown(ts, now) {
   const diff = ts - now
   if (diff <= 0) return '已播出'
   const min = Math.floor(diff / 60000)
+  if (min < 1) return '不到 1 分钟'
   if (min < 60) return `${min} 分钟后`
   const h = Math.floor(min / 60)
   if (h < 48) return `${h} 小时后`
@@ -34,6 +36,12 @@ export default function Calendar() {
   const [state, setState] = useState({ loading: true, ok: true, items: [] })
   // B-8：手动重试计数（失败后可点击重试，无需离开页面重新进入）
   const [attempt, setAttempt] = useState(0)
+  // N-3：每分钟重渲染一次，让「N 分钟后」倒计时实时滚动
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     let cancelled = false

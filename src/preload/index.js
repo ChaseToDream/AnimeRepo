@@ -61,6 +61,8 @@ const api = {
   openFolder: (p) => ipcRenderer.invoke('shell:open-folder', p),
   getVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('app:check-update'),
+  // N-5：打开项目 LICENSE 文件
+  openLicense: () => ipcRenderer.invoke('app:open-license'),
   // —— B-7：更新源是否已配置（未配置时不展示检查更新入口）
   hasUpdateSource: () => ipcRenderer.invoke('app:has-update-source'),
   // —— F-4：局域网播放 ——

@@ -93,7 +93,8 @@ export default function History() {
                       <div className="history-item__main">
                         <div className="history-item__title">{h.animeTitle}</div>
                         <div className="history-item__meta">
-                          第 {h.epNumber ?? '?'} 话
+                          {/* N-4：未识别文件（number=0）不显示「第 ? 话」 */}
+                          {h.epNumber > 0 ? `第 ${h.epNumber} 话` : '未分类剧集'}
                           {h.seconds ? ` · ${formatTime(h.seconds)}` : ''}
                         </div>
                       </div>
